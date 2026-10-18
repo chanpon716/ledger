@@ -42,9 +42,10 @@ input,textarea{-webkit-appearance:none;appearance:none}
 .sum .net{font-size:20px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;line-height:1.3}
 .sum .sub{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:2px;white-space:nowrap}
 body[data-view="list"] .sum,body[data-view="set"] .sum,body[data-view="due"] .sum{opacity:0;pointer-events:none}
-/* 標題區只在「記一筆」出現，其餘頁面讓內容直接從頂部開始 */
-body:not([data-view="entry"]) .head{display:none}
-body:not([data-view="entry"]) main{padding-top:calc(env(safe-area-inset-top,0px) + 16px)}
+/* 標題區：記一筆顯示「記帳 + 月份」，其餘頁面顯示頁名 */
+.head-page{display:none;font-size:24px;font-weight:700;letter-spacing:-.01em;line-height:1.2;margin-top:20px}
+body:not([data-view="entry"]) .head-entry{display:none}
+body:not([data-view="entry"]) .head-page{display:block}
 
 main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 16px calc(96px + var(--sat));scrollbar-width:none}
 body[data-view="entry"] main{padding-bottom:calc(160px + var(--sat))}  /* 讓出儲存列 + 分頁列 */
@@ -161,6 +162,7 @@ body:not([data-view="entry"]) .savebar{display:none}
 .dot{width:6px;height:6px;border-radius:50%;background:#E0A63C;flex:none}
 .empty{text-align:center;padding:56px 20px;color:var(--muted)}
 .empty .e{font-size:36px;opacity:.3;margin-bottom:10px}
+.empty .ei{width:46px;height:46px;stroke:var(--muted);fill:none;stroke-width:1.3;opacity:.42;margin-bottom:12px;stroke-linecap:round;stroke-linejoin:round}
 .empty p{margin:0;font-size:13.5px;line-height:1.7}
 
 /* settings */
@@ -203,10 +205,11 @@ body:not([data-view="entry"]) .savebar{display:none}
 <body>
 <div class="app">
   <header class="head">
-    <div>
+    <div class="head-entry">
       <h1>記帳</h1>
       <div class="m" id="headMonth">—</div>
     </div>
+    <div class="head-page" id="pageTitle">明細</div>
     <div class="sum">
       <div class="net" id="headNet">—</div>
       <div class="sub" id="headSub">—</div>
@@ -1183,7 +1186,9 @@ function renderList(){
     `${net < 0 ? '-' : '+'}${S.currency}${money(Math.abs(net))}</b>`;
 
   if(!rows.length){
-    $('#listBody').innerHTML = `<div class="empty"><div class="e">${isInc ? '💰' : '🧾'}</div>
+    $('#listBody').innerHTML = `<div class="empty"><svg class="ei" viewBox="0 0 24 24">${
+      isInc ? '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/>'
+            : '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9.5 8h5M9.5 12h5"/>'}</svg>
       <p>${range === 'month' ? '本月' : ''}還沒有${isInc ? '收入' : '支出'}記錄<br>
       切到「記一筆」開始吧</p></div>`;
     return;
@@ -1281,7 +1286,7 @@ function renderDue(){
     : (done.length ? `${done.length} 筆已收款` : '還沒有待收的款項');
 
   if(!DUE.length){
-    $('#dueBody').innerHTML = `<div class="empty"><div class="e">🧾</div>
+    $('#dueBody').innerHTML = `<div class="empty"><svg class="ei" viewBox="0 0 24 24"><path d="M20 8H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z"/><path d="M16 4H8a2 2 0 0 0-2 2v2"/><circle cx="17" cy="13.5" r="1.3"/></svg>
       <p>還沒有待收款項<br>按右上角「＋ 新增」記一筆</p></div>`;
     return;
   }
@@ -1480,10 +1485,12 @@ function exportCSV(){
 }
 
 /* ---------- 導航 ---------- */
+const PAGE_TITLES = { list: '明細', due: '待收款', set: '設定' };
 function go(v){
   Array.from(document.querySelectorAll('.view')).forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
   Array.from(document.querySelectorAll('#tabbar button')).forEach(b => b.classList.toggle('on', b.dataset.view === v));
   document.body.dataset.view = v;
+  if(PAGE_TITLES[v]) $('#pageTitle').textContent = PAGE_TITLES[v];
   $('#main').scrollTop = 0;
   if(v === 'list') renderList();
   if(v === 'due') renderDue();
