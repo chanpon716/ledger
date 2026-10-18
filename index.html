@@ -1,0 +1,1626 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#F6F4EF">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="記帳">
+<title>記帳 · Instant Photo Macau</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+:root{
+  --bg:#F6F4EF; --card:#FFF; --ink:#1B1A17; --ink-2:#4A463D; --muted:#8E8878;
+  --line:#EBE6DA; --line-2:#F2EEE4;
+  --expense:#C0553C; --income:#2E7D5B;
+  --r:20px;
+  --shadow:0 1px 2px rgba(27,26,23,.04),0 8px 24px -12px rgba(27,26,23,.14);
+  --sat:env(safe-area-inset-bottom,0px);
+  --tabh:calc(63px + var(--sat));   /* 分頁列實際高度，儲存列用它對齊 */
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","PingFang SC","Noto Sans TC","Noto Sans SC","Hiragino Sans GB","Microsoft JhengHei",system-ui,sans-serif;
+  font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased;overscroll-behavior-y:none;
+}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+button{border:0;background:none;padding:0;cursor:pointer}
+input,textarea{-webkit-appearance:none;appearance:none}
+
+.app{display:flex;flex-direction:column;height:100vh;height:100dvh;max-width:520px;margin:0 auto;position:relative;background:var(--bg)}
+
+/* header */
+.head{padding:calc(env(safe-area-inset-top,0px) + 14px) 20px 10px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex:none}
+.head h1{margin:0;font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--muted)}
+.head .m{font-size:21px;font-weight:700;letter-spacing:-.01em;margin-top:3px;white-space:nowrap}
+.head > div:first-child{min-width:0}
+.sum{text-align:right;font-variant-numeric:tabular-nums;transition:.2s;flex:none;padding-top:2px}
+.sum .net{font-size:20px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;line-height:1.3}
+.sum .sub{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:2px;white-space:nowrap}
+body[data-view="list"] .sum,body[data-view="set"] .sum,body[data-view="due"] .sum{opacity:0;pointer-events:none}
+
+main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 16px calc(96px + var(--sat));scrollbar-width:none}
+body[data-view="entry"] main{padding-bottom:calc(160px + var(--sat))}  /* 讓出儲存列 + 分頁列 */
+main::-webkit-scrollbar{display:none}
+.view{display:none;animation:fade .22s ease}
+.view.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:16px;margin-bottom:12px}
+
+/* segment */
+.seg{display:flex;background:#EAE6DB;border-radius:14px;padding:4px;margin-bottom:12px}
+.seg button{flex:1;padding:9px 0;border-radius:11px;font-size:14px;font-weight:600;color:var(--muted);transition:.18s}
+.seg button.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.seg button.on[data-type="income"]{color:var(--income)}
+.seg button.on[data-type="expense"]{color:var(--expense)}
+
+/* 編輯中提示條 */
+.editbar{display:none;align-items:center;gap:10px;background:#1F1E1A;color:#F6F4EF;
+  border-radius:13px;padding:10px 12px;margin-bottom:10px}
+.editbar.on{display:flex}
+.editbar .eb-txt{flex:1;min-width:0;font-size:12px;line-height:1.35;opacity:.92;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.editbar b{font-weight:700;margin-right:6px;letter-spacing:.02em}
+.editbar button{flex:none;border:0;background:rgba(255,255,255,.16);color:#fff;
+  font-size:12px;font-weight:600;padding:5px 11px;border-radius:8px;line-height:1.3}
+.editbar button:active{background:rgba(255,255,255,.26)}
+
+/* amount */
+.lab{font-size:12px;font-weight:600;color:var(--muted);margin:0 0 7px 2px;letter-spacing:.02em}
+.amount-row{display:flex;align-items:baseline;gap:8px;border-bottom:2px solid var(--line);padding-bottom:9px;transition:.2s}
+.amount-row .cur{font-size:15px;font-weight:700;color:var(--muted);flex:none;letter-spacing:.02em}
+#amount{flex:1;min-width:0;border:0;background:none;outline:none;font-size:38px;font-weight:700;letter-spacing:-.03em;padding:0;font-variant-numeric:tabular-nums}
+#amount::placeholder{color:#D9D3C4}
+.amount-row.inc{border-color:var(--income)}
+.amount-row.exp{border-color:var(--expense)}
+.recv{display:flex;align-items:center;gap:8px;margin-top:12px;background:#FBFAF6;border:1px solid var(--line);border-radius:13px;padding:9px 10px 9px 13px}
+.recv .rl{font-size:12.5px;font-weight:600;color:var(--muted);flex:none}
+#received{flex:1;min-width:0;border:0;background:none;outline:none;text-align:right;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;padding:0}
+#received::placeholder{color:#CFC8B7;font-weight:500}
+.samebtn{flex:none;font-size:11.5px;font-weight:700;padding:6px 10px;border-radius:9px;background:#EDE9DE;color:var(--ink-2)}
+.samebtn:active{background:#E3DED0}
+
+/* fields */
+.field{margin-top:14px}
+.field.first{margin-top:0}
+.inp{width:100%;border:1px solid var(--line);background:#FBFAF6;border-radius:13px;padding:12px 14px;outline:none;transition:.15s;font-size:15px}
+.inp:focus{border-color:#C9C2AF;background:#fff}
+textarea.inp{resize:none;min-height:56px;line-height:1.5}
+.chips{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border-radius:10px;background:#F5F2EA;font-size:12px;font-weight:500;color:var(--ink-2);border:1px solid transparent;transition:.15s;line-height:1.25}
+.chip.on{background:var(--ink);color:#fff;font-weight:600}
+.chip:active{transform:scale(.96)}
+.two{display:flex;gap:10px}
+.two>.field{flex:1;min-width:0}
+
+/* switch */
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;background:#FBFAF6;border:1px solid var(--line);border-radius:13px;cursor:pointer}
+.switch span{font-size:14px;font-weight:500}
+.switch input{position:absolute;opacity:0;pointer-events:none}
+.switch i{width:46px;height:27px;border-radius:14px;background:#DCD6C7;position:relative;transition:.2s;flex:none}
+.switch i::after{content:'';position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.switch input:checked + i{background:var(--ink)}
+.switch input:checked + i::after{transform:translateX(19px)}
+
+/* save */
+.savebar{position:absolute;left:0;right:0;bottom:var(--tabh);max-width:520px;margin:0 auto;padding:14px 16px 10px;background:linear-gradient(to bottom,rgba(246,244,239,0) 0%,rgba(246,244,239,.92) 22%,var(--bg) 48%);z-index:20}
+body:not([data-view="entry"]) .savebar{display:none}
+.btn{width:100%;padding:16px;border-radius:16px;background:var(--ink);color:#fff;font-size:16px;font-weight:700;letter-spacing:.02em;box-shadow:0 10px 24px -12px rgba(27,26,23,.7);transition:.15s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn:active{transform:scale(.985);opacity:.92}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);box-shadow:none}
+.btn.small{padding:11px 16px;font-size:13.5px;border-radius:12px;width:auto}
+.btn[disabled]{opacity:.4;box-shadow:none}
+
+/* list */
+.listtop{background:#fff;border-radius:16px;box-shadow:var(--shadow);padding:13px 14px;margin-bottom:14px}
+.lt-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.listtop .k{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.05em}
+.mini{display:flex;gap:2px;background:#F5F2EA;border-radius:9px;padding:2px;flex:none}
+.mini button{border:0;background:none;font-size:11px;font-weight:600;color:var(--muted);padding:4px 10px;border-radius:7px;line-height:1.2;transition:.15s}
+.mini button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.09)}
+.lt-main{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:4px}
+.lt-main .v{font-size:25px;font-weight:700;letter-spacing:-.025em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.lt-main .c{font-size:11.5px;color:var(--muted);font-weight:600;flex:none}
+.lt-sub{font-size:11.5px;color:var(--muted);margin-top:3px}
+.lt-sub b{font-weight:700;font-variant-numeric:tabular-nums}
+.daygrp{margin-bottom:14px}
+.dayhead{display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 6px;font-size:12px;color:var(--muted);font-weight:600}
+.dayhead .t{font-variant-numeric:tabular-nums}
+.dayhead .gname{display:flex;align-items:center;gap:6px;min-width:0}
+.dayhead .gname b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dayhead .n{font-size:10.5px;color:#B3AC9C;font-weight:600;flex:none}
+.daycard{background:#fff;border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line-2);transition:.12s}
+.row:last-child{border-bottom:0}
+.row:active{background:#FBFAF6}
+.row .mid{flex:1;min-width:0}
+.row .t1{font-size:14.5px;font-weight:600;line-height:1.32;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.row .t2{font-size:11.5px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .amt{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;flex:none;letter-spacing:-.01em}
+
+/* 待收款 */
+.due-sec{margin:14px 4px 8px;font-size:12px;font-weight:600;color:var(--muted)}
+.due-sec:first-child{margin-top:2px}
+.due-item .amt{font-size:14.5px;font-weight:700;color:var(--ink)}
+.due-item.done .t1{text-decoration:line-through;color:var(--muted)}
+.due-item.done .amt{color:var(--muted);text-decoration:line-through;font-weight:600}
+.chk{width:27px;height:27px;border-radius:50%;border:1.6px solid #DCD5C6;background:#fff;display:grid;place-items:center;flex:none;transition:.15s}
+.chk svg{width:14px;height:14px;stroke:#fff;stroke-width:3.2;fill:none;opacity:0;transition:.15s}
+.chk.on{background:var(--income);border-color:var(--income)}
+.chk.on svg{opacity:1}
+.chk:active{transform:scale(.9)}
+.amt.exp{color:var(--expense)}.amt.inc{color:var(--income)}
+.dot{width:6px;height:6px;border-radius:50%;background:#E0A63C;flex:none}
+.empty{text-align:center;padding:56px 20px;color:var(--muted)}
+.empty .e{font-size:36px;opacity:.3;margin-bottom:10px}
+.empty p{margin:0;font-size:13.5px;line-height:1.7}
+
+/* settings */
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line-2)}
+.setrow:last-child{border-bottom:0}
+.setrow .n{font-size:14.5px;font-weight:600}
+.setrow .d{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.5}
+.pill{font-size:11px;font-weight:700;padding:4px 9px;border-radius:8px;flex:none}
+.pill.ok{background:#E4F1EA;color:var(--income)}
+.pill.off{background:#F0EDE4;color:var(--muted)}
+.codebox{background:#1B1A17;color:#E8E4DA;border-radius:14px;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;line-height:1.6;max-height:190px;overflow:auto;white-space:pre;margin-top:10px}
+.steps{counter-reset:s;margin:0;padding:0;list-style:none}
+.steps li{counter-increment:s;position:relative;padding-left:28px;font-size:13px;color:var(--ink-2);line-height:1.65;margin-bottom:9px}
+.steps li::before{content:counter(s);position:absolute;left:0;top:1px;width:19px;height:19px;border-radius:50%;background:var(--ink);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+.steps b{color:var(--ink)}
+.hint{font-size:11.5px;color:var(--muted);line-height:1.65;margin:9px 0 0}
+
+/* tabbar */
+.tabbar{position:absolute;left:0;right:0;bottom:0;display:flex;padding:6px 8px calc(6px + var(--sat));background:rgba(255,255,255,.9);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:1px solid var(--line);z-index:30}
+.tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0 4px;color:#A9A292;font-size:10.5px;font-weight:600;transition:.15s}
+.tabbar button svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabbar button.on{color:var(--ink)}
+
+/* toast + sheet */
+#toast{position:fixed;left:50%;bottom:calc(120px + var(--sat));transform:translate(-50%,14px);background:rgba(27,26,23,.94);color:#fff;font-size:13px;font-weight:500;padding:11px 18px;border-radius:13px;opacity:0;pointer-events:none;transition:.25s;z-index:60;max-width:86vw;text-align:center;line-height:1.45}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+.scrim{position:fixed;inset:0;background:rgba(20,19,17,.42);opacity:0;pointer-events:none;transition:.22s;z-index:70}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;background:#fff;border-radius:24px 24px 0 0;padding:10px 20px calc(24px + var(--sat));transform:translateY(102%);transition:transform .28s cubic-bezier(.32,.72,0,1);z-index:80;max-height:86dvh;overflow-y:auto}
+.sheet.on{transform:none}
+.grab{width:38px;height:4px;border-radius:2px;background:#E2DDD0;margin:0 auto 14px}
+.sheet h3{margin:0 0 14px;font-size:17px;font-weight:700}
+.kv{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid var(--line-2);font-size:13.5px}
+.kv .k{color:var(--muted);flex:none}
+.kv .v{font-weight:600;text-align:right;word-break:break-word}
+.shake{animation:sh .4s}
+@keyframes sh{0%,100%{transform:none}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="head">
+    <div>
+      <h1>記帳</h1>
+      <div class="m" id="headMonth">—</div>
+    </div>
+    <div class="sum">
+      <div class="net" id="headNet">—</div>
+      <div class="sub" id="headSub">—</div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ============ 記一筆 ============ -->
+    <section class="view on" id="v-entry">
+      <div class="editbar" id="editBar">
+        <div class="eb-txt"><b>編輯中</b><span id="editInfo"></span></div>
+        <button id="cancelEdit">取消</button>
+      </div>
+      <div class="seg" id="seg">
+        <button data-type="income" class="on">收入</button>
+        <button data-type="expense">支出</button>
+      </div>
+
+      <div class="card">
+        <div class="lab" id="amtLabel">收入費用</div>
+        <div class="amount-row inc" id="amtRow">
+          <span class="cur" id="curSym">MOP$</span>
+          <input id="amount" inputmode="decimal" autocomplete="off" placeholder="0">
+        </div>
+        <div class="recv" id="recvRow">
+          <span class="rl">實收費用</span>
+          <input id="received" inputmode="decimal" autocomplete="off" placeholder="同收入費用">
+          <button class="samebtn" id="sameBtn">同上</button>
+        </div>
+        <div class="field">
+          <div class="lab" id="dateLabel">租用時間</div>
+          <div class="chips" id="dateChips">
+            <button class="chip on" data-off="0">今天</button>
+            <button class="chip" data-off="-1">昨天</button>
+            <button class="chip" data-off="-2">前天</button>
+            <input type="date" id="date" class="chip" style="padding:7px 8px;background:#F5F2EA;color:var(--ink-2);border:0;width:132px;flex:none;font-size:12.5px;text-align:center">
+          </div>
+        </div>
+      </div>
+
+      <!-- 收入專屬 -->
+      <div class="card" id="incCard">
+        <div class="field first">
+          <div class="lab">服務類型</div>
+          <div class="chips" id="services"></div>
+        </div>
+        <div class="field">
+          <div class="lab">活動類型</div>
+          <div class="chips" id="events"></div>
+        </div>
+        <div class="field">
+          <div class="lab">客戶 / 公司名稱</div>
+          <input class="inp" id="client" placeholder="例：澳門大學、DFS、Wynn" autocomplete="off">
+        </div>
+        <div class="field">
+          <div class="lab">地點</div>
+          <input class="inp" id="venue" placeholder="例：Grand Hyatt、MGM Cotai" autocomplete="off">
+        </div>
+        <div class="two">
+          <div class="field">
+            <div class="lab">鐘數</div>
+            <input class="inp" id="hours" inputmode="numeric" placeholder="選填" autocomplete="off">
+          </div>
+          <div class="field">
+            <div class="lab">印相張數</div>
+            <input class="inp" id="prints" inputmode="numeric" placeholder="選填" autocomplete="off">
+          </div>
+        </div>
+        <div class="field">
+          <div class="lab">接單來源</div>
+          <input class="inp" id="source" list="srcList" placeholder="wechat / fb / 婚展客…" autocomplete="off">
+          <datalist id="srcList"></datalist>
+        </div>
+        <div class="field">
+          <div class="lab">行家單</div>
+          <label class="switch">
+            <span>標記為行家單</span>
+            <input type="checkbox" id="dealer"><i></i>
+          </label>
+        </div>
+      </div>
+
+      <!-- 支出專屬 -->
+      <div class="card" id="expCard" style="display:none">
+        <div class="field first">
+          <div class="lab">類型</div>
+          <div class="chips" id="expTypes"></div>
+        </div>
+        <div class="field">
+          <div class="lab">支出者</div>
+          <input class="inp" id="spender" placeholder="選填" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="field first">
+          <div class="lab" id="noteLabel">備註</div>
+          <textarea class="inp" id="note" placeholder="選填"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 明細 ============ -->
+    <section class="view" id="v-list">
+      <div class="seg" id="listSeg">
+        <button data-lt="income" class="on">收入</button>
+        <button data-lt="expense">支出</button>
+      </div>
+      <div class="listtop">
+        <div class="lt-head">
+          <div class="k" id="lsK">本月收入</div>
+          <div class="mini" id="rangeSeg">
+            <button data-range="month" class="on">本月</button>
+            <button data-range="all">全部</button>
+          </div>
+        </div>
+        <div class="lt-main">
+          <div class="v" id="lsMain">—</div>
+          <div class="c" id="lsCount">0 筆</div>
+        </div>
+        <div class="lt-sub" id="lsSub">—</div>
+      </div>
+
+      <div class="mini" id="groupSeg" style="margin:0 4px 12px">
+        <button data-g="date" class="on">按日期</button>
+        <button data-g="service">服務類型</button>
+        <button data-g="event">活動類型</button>
+      </div>
+      <div id="listBody"></div>
+    </section>
+
+    <!-- ============ 待收款 ============ -->
+    <section class="view" id="v-due">
+      <div class="listtop">
+        <div class="lt-head">
+          <div class="k">未收款項</div>
+          <button class="btn small" id="dueAdd">＋ 新增</button>
+        </div>
+        <div class="lt-main">
+          <div class="v" id="dueMain">—</div>
+          <div class="c" id="dueCount">0 筆</div>
+        </div>
+        <div class="lt-sub" id="dueSub">—</div>
+      </div>
+      <div id="dueBody"></div>
+      <p class="hint" style="padding:0 4px">只是提醒清單，不會計入收入、支出或結餘，也不會寫進 Google Sheet。</p>
+    </section>
+
+    <!-- ============ 設定 ============ -->
+    <section class="view" id="v-set">
+      <div class="card">
+        <div class="setrow">
+          <div><div class="n">Google Sheets 連線</div><div class="d" id="epDesc">尚未設定，資料只存在這支手機</div></div>
+          <span class="pill off" id="epPill">未連線</span>
+        </div>
+        <div style="margin-top:12px">
+          <input class="inp" id="endpoint" placeholder="貼上 Apps Script Web App 網址（…/exec）" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn small ghost" id="testEp" style="flex:1;width:auto">測試連線</button>
+            <button class="btn small" id="saveEp" style="flex:1;width:auto">儲存網址</button>
+          </div>
+        </div>
+        <div id="verWarn" style="display:none;margin-top:10px;background:#FDECEC;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.65;color:#B3261E">
+          <b>目前連到舊版腳本</b><br>新增記帳正常，但編輯與刪除不會寫回 Google Sheet。請照最下面的步驟「更新部署」。
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="setrow">
+          <div><div class="n">待同步</div><div class="d" id="pendDesc">—</div></div>
+          <button class="btn small" id="syncNow">立即同步</button>
+        </div>
+        <div class="setrow">
+          <div><div class="n">載入歷史</div><div class="d">把 Sheet 裡的舊帳抓回手機明細</div></div>
+          <button class="btn small ghost" id="pullHist">載入</button>
+        </div>
+        <div class="setrow">
+          <div><div class="n">幣別</div><div class="d">顯示在金額前面</div></div>
+          <select id="currency" class="chip" style="padding:8px 10px;background:#F5F2EA;border:0">
+            <option value="MOP$">MOP$</option>
+            <option value="HK$">HK$</option>
+            <option value="NT$">NT$</option>
+            <option value="¥">¥</option>
+            <option value="$">$</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="lab" style="margin-bottom:10px">選項管理（逗號分隔）</div>
+        <div class="field first"><div class="lab">服務類型</div><textarea class="inp" id="optServices" style="min-height:64px"></textarea></div>
+        <div class="field"><div class="lab">活動類型</div><textarea class="inp" id="optEvents" style="min-height:64px"></textarea></div>
+        <div class="field"><div class="lab">支出類型</div><textarea class="inp" id="optExpTypes" style="min-height:52px"></textarea></div>
+        <button class="btn small ghost" id="saveOpts" style="width:100%;margin-top:12px">儲存選項</button>
+        <p class="hint">改動只影響表單上可選的標籤，不會影響已記錄的舊資料。</p>
+      </div>
+
+      <div class="card">
+        <div class="setrow">
+          <div><div class="n">匯出 CSV</div><div class="d">目前選的類型（收入／支出）</div></div>
+          <button class="btn small ghost" id="csv">匯出</button>
+        </div>
+        <div class="setrow">
+          <div><div class="n">清空本機資料</div><div class="d">不會刪除 Google Sheet 的內容</div></div>
+          <button class="btn small ghost" id="wipe" style="color:var(--expense)">清空</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="lab" style="margin-bottom:10px">連到你的 Google Sheet（只需做一次）</div>
+        <ol class="steps">
+          <li>打開程式編輯器：<br>
+            試算表 → <b>擴充功能</b> → <b>Apps Script</b>，或直接在瀏覽器開 <b>script.google.com</b> → 新增專案</li>
+          <li>刪掉裡面原有的程式，貼上下方程式碼</li>
+          <li>按 <b>部署</b> → <b>新增部署作業</b> → 類型選 <b>網頁應用程式</b></li>
+          <li>「執行身分」選<b>我</b>，「誰可以存取」選<b>任何人</b> → 部署並授權</li>
+          <li>複製 <b>網頁應用程式網址</b>（結尾 /exec），貼到上面欄位並儲存</li>
+        </ol>
+        <div style="background:#FFF4E5;border-radius:12px;padding:12px 14px;margin-top:10px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px">已經部署過？改完程式要「更新」才生效</div>
+          <div style="font-size:12.5px;line-height:1.65;color:#6B5B3E">
+            部署 → <b>管理部署作業</b> → 點現有那筆的<b>鉛筆圖示</b> → 版本選 <b>新版本</b> → 部署。<br>
+            網址不會變，不用重貼。改完後到上面按一次「測試連線」，要看到 <b>v1.3.0</b> 才算成功。
+          </div>
+        </div>
+        <p class="hint">程式已內含你的試算表 ID，兩種方式貼都通用；會自動建立「收入」與「支出」兩張工作表。</p>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn small" id="copyGs" style="flex:1;width:auto">複製程式碼</button>
+          <button class="btn small ghost" id="toggleGs" style="flex:1;width:auto">顯示／隱藏</button>
+        </div>
+        <div class="codebox" id="gsBox" style="display:none"></div>
+        <p class="hint">之後在手機瀏覽器選「加入主畫面」，就會像 App 一樣全螢幕開啟。</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- 儲存列：貼著分頁列上緣，只有「記一筆」顯示 -->
+  <div class="savebar" id="savebar">
+    <button class="btn" id="save">儲存這筆</button>
+  </div>
+
+  <nav class="tabbar" id="tabbar">
+    <button data-view="entry" class="on">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>記一筆</span>
+    </button>
+    <button data-view="list">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>明細</span>
+    </button>
+    <button data-view="due">
+      <svg viewBox="0 0 24 24"><path d="M20 8H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z"/><path d="M16 4H8a2 2 0 0 0-2 2v2"/><circle cx="17" cy="13.5" r="1.3"/></svg><span>待收款</span>
+    </button>
+    <button data-view="set">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>設定</span>
+    </button>
+  </nav>
+</div>
+
+<div id="toast"></div>
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><div id="sheetBody"></div></div>
+<div class="sheet" id="dueSheet"><div class="grab"></div><h3 id="dueSheetTitle">新增待收款</h3><div id="dueForm"></div></div>
+
+<script type="text/plain" id="gsSource">
+/***  記帳 → Google Sheets 接收端（收入 / 支出 兩張表）  ***/
+/***  兩種貼法都能用：                                 ***/
+/***  A. 試算表 → 擴充功能 → Apps Script（綁定式）      ***/
+/***  B. script.google.com → 新增專案（獨立式，靠下面的 SHEET_ID）***/
+
+var VERSION = '1.3.0';   // 1.3.0 = 支援編輯（mode:'update'）與刪除
+
+var SHEET_ID = '10Yw9Zz7038trQhIwm9pzmQ-PdZNZI5tBDEhIAg05pIQ';
+
+var INCOME_SHEET  = '收入';
+var EXPENSE_SHEET = '支出';
+var INCOME_HEADERS  = ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID'];
+var EXPENSE_HEADERS = ['支出日期','Cost','類型','Notes','支出者','ID'];
+
+/** 綁定式優先；獨立式就用 SHEET_ID 開啟 */
+function ss_() {
+  var ss = null;
+  try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
+  if (!ss) ss = SpreadsheetApp.openById(SHEET_ID);
+  return ss;
+}
+
+function getSheet_(name, headers) {
+  var ss = ss_();
+  var sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(headers);
+    sh.getRange(1, 1, 1, headers.length)
+      .setFontWeight('bold').setBackground('#F2EEE4').setVerticalAlignment('middle');
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1, 105);
+    if (name === INCOME_SHEET) {
+      sh.setColumnWidth(2, 210);
+      sh.setColumnWidth(7, 190);
+      sh.getRange('C:D').setNumberFormat('#,##0.00');
+      sh.getRange('F:F').setNumberFormat('0');
+      sh.getRange('J:J').setNumberFormat('0');
+    } else {
+      sh.setColumnWidth(2, 110);
+      sh.setColumnWidth(3, 120);
+      sh.setColumnWidth(4, 240);
+      sh.getRange('B:B').setNumberFormat('#,##0.00');
+    }
+    sh.getRange('A:A').setNumberFormat('yyyy-mm-dd');
+  }
+  return sh;
+}
+
+/** 依 ID 找列號（1-based），找不到回 0 */
+function findRow_(sh, col, id) {
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+  var ids = sh.getRange(2, col, last - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(id)) return i + 2;
+  }
+  return 0;
+}
+
+function buildRow_(b, isIncome, id) {
+  if (isIncome) {
+    return [
+      b.date ? new Date(b.date + 'T00:00:00') : new Date(),
+      (b.services || []).join(', '),
+      Number(b.amount) || 0,
+      Number(b.received) || 0,
+      b.eventType || '',
+      b.hours === '' || b.hours == null ? '' : Number(b.hours),
+      b.client || '',
+      b.venue || '',
+      b.source || '',
+      b.prints === '' || b.prints == null ? '' : Number(b.prints),
+      b.note || '',
+      b.dealer ? 'checked' : '',
+      id
+    ];
+  }
+  return [
+    b.date ? new Date(b.date + 'T00:00:00') : new Date(),
+    Number(b.amount) || 0,
+    b.expType || '',
+    b.note || '',
+    b.spender || '',
+    id
+  ];
+}
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var b = JSON.parse(e.postData.contents);
+    var isIncome = (b.type === 'income');
+    var sh = isIncome ? getSheet_(INCOME_SHEET, INCOME_HEADERS)
+                      : getSheet_(EXPENSE_SHEET, EXPENSE_HEADERS);
+    var id = b.id || '';
+    var col = isIncome ? 13 : 6;
+    var mode = b.mode || '';
+
+    // 刪除：按 ID 找到那一列直接刪掉
+    if (mode === 'delete') {
+      var delRow = id ? findRow_(sh, col, id) : 0;
+      if (delRow) sh.deleteRow(delRow);
+      return out_({ ok: true, deleted: !!delRow, row: delRow });
+    }
+
+    var row = buildRow_(b, isIncome, id);
+
+    if (id) {
+      var rowNum = findRow_(sh, col, id);
+
+      // 編輯：覆蓋原本那一列
+      if (mode === 'update' && rowNum) {
+        sh.getRange(rowNum, 1, 1, row.length).setValues([row]);
+        return out_({ ok: true, updated: true, row: rowNum });
+      }
+      // 新增：ID 已存在就當重複，避免網路重試寫出兩列
+      if (mode !== 'update' && rowNum) {
+        return out_({ ok: true, dup: true, row: rowNum });
+      }
+    }
+
+    // 沒帶 mode=update，或要更新的那列已不存在 → 直接新增
+    sh.appendRow(row);
+    return out_({ ok: true, row: sh.getLastRow(), appended: true });
+  } catch (err) {
+    return out_({ ok: false, error: String(err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function doGet(e) {
+  var action = (e && e.parameter && e.parameter.action) || '';
+  if (action === 'list') return list_();
+
+  var name = '', ok = true, err = '';
+  try { name = ss_().getName(); } catch (e2) { ok = false; err = String(e2); }
+  return out_({
+    ok: ok, service: 'ledger', version: VERSION, sheet: name, error: err,
+    time: new Date().toISOString()
+  });
+}
+
+function fmtDate_(v) {
+  if (!v) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return String(v).slice(0, 10);
+}
+function numOrBlank_(v) {
+  return (v === '' || v === null || v === undefined) ? '' : (Number(v) || 0);
+}
+
+/** ?action=list → 把 Sheet 裡的資料吐回給 App（載入歷史用） */
+function list_() {
+  try {
+    var ss = ss_();
+    var inc = [], exp = [], i, r;
+
+    var si = ss.getSheetByName(INCOME_SHEET);
+    if (si && si.getLastRow() > 1) {
+      var vi = si.getRange(2, 1, si.getLastRow() - 1, INCOME_HEADERS.length).getValues();
+      for (i = 0; i < vi.length; i++) {
+        r = vi[i];
+        if (!r[0] && !r[2]) continue;
+        inc.push({
+          id: String(r[12] || ('at-inc-' + (i + 1))),
+          type: 'income',
+          date: fmtDate_(r[0]),
+          amount: Number(r[2]) || 0,
+          received: Number(r[3]) || 0,
+          services: String(r[1] || '').split(',').map(function (s) { return s.trim() }).filter(Boolean),
+          eventType: String(r[4] || ''),
+          hours: numOrBlank_(r[5]),
+          prints: numOrBlank_(r[9]),
+          client: String(r[6] || ''),
+          venue: String(r[7] || ''),
+          source: String(r[8] || ''),
+          dealer: String(r[11]).toLowerCase() === 'checked' || r[11] === true,
+          expType: '', spender: '',
+          note: String(r[10] || ''),
+          createdAt: '', synced: true
+        });
+      }
+    }
+
+    var se = ss.getSheetByName(EXPENSE_SHEET);
+    if (se && se.getLastRow() > 1) {
+      var ve = se.getRange(2, 1, se.getLastRow() - 1, EXPENSE_HEADERS.length).getValues();
+      for (i = 0; i < ve.length; i++) {
+        r = ve[i];
+        if (!r[0] && !r[1]) continue;
+        exp.push({
+          id: String(r[5] || ('at-exp-' + (i + 1))),
+          type: 'expense',
+          date: fmtDate_(r[0]),
+          amount: Number(r[1]) || 0,
+          received: '',
+          services: [], eventType: '', hours: '', prints: '',
+          client: '', venue: '', source: '', dealer: false,
+          expType: String(r[2] || ''),
+          spender: String(r[4] || ''),
+          note: String(r[3] || ''),
+          createdAt: '', synced: true
+        });
+      }
+    }
+
+    return out_({ ok: true, income: inc, expense: exp });
+  } catch (err) {
+    return out_({ ok: false, error: String(err) });
+  }
+}
+
+/** 手動測試：在編輯器選這個函式按「執行」，看執行記錄 */
+function testSetup() {
+  var ss = ss_();
+  Logger.log('試算表：' + ss.getName());
+  Logger.log('收入表：' + (ss.getSheetByName(INCOME_SHEET) ? '已存在' : '尚未建立'));
+  Logger.log('支出表：' + (ss.getSheetByName(EXPENSE_SHEET) ? '已存在' : '尚未建立'));
+  return ss.getName();
+}
+
+function out_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+</script>
+
+<script>
+/* =========================================================
+   記帳 App — Instant Photo Macau 財務
+   ========================================================= */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+const K_REC = 'ledger.records.v2';
+const K_SET = 'ledger.settings.v2';
+const K_DUE = 'ledger.due.v1';
+
+const DEFAULT_OPTIONS = {
+  services: ['Classic Photobooth','Light Photobooth (white)','Light Photobooth(black)','Vintage Photobooth','Circle Photobooth','Cube Photobooth','Mini Photobooth','Huge Photobooth','360','即晚派相','電話留言','客製Photobooth','LookUp'],
+  events: ['婚宴','公司活動','公司周年','公司春茗','學校活動','公司宣傳活動','生日派對','畢業聚餐','節日活動','協會活動','百日宴','政府活動','其他'],
+  expTypes: ['車油','FB廣告','相紙','工作室租金','車位租金','其他']
+};
+const SOURCES = ['wechat','whatsapp','fb','facebook','email','婚展客','小天','Pico','VJ','Hers','Cyrus','Galaxy','HK company','MGM','瑞吉酒店The Manor','文華東方','四季酒店','澳門大學','聖若瑟五校'];
+
+let S = {
+  endpoint:'', currency:'MOP$', scriptVer:'', oldScript:false,
+  options: JSON.parse(JSON.stringify(DEFAULT_OPTIONS))
+};
+let R = [];
+let DUE = [];
+let type = 'income';
+let services = [];
+let eventType = null;
+let expType = null;
+let dateISO = todayISO();
+let range = 'month';
+let listType = 'income';
+let groupBy = 'date';   // date | service | event（僅收入頁）
+let syncing = false;
+let editingId = null;
+
+/** 已標記刪除、但還沒從 Sheet 刪掉的記錄不列入顯示與統計 */
+function active(){ return R.filter(r => !r.deleted) }
+
+function localISO(d){ d = d || new Date(); const p = n => String(n).padStart(2,'0');
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) }
+function todayISO(){ return localISO(new Date()) }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7) }
+function money(n){
+  const v = Number(n)||0;
+  return v.toLocaleString('en-US',{minimumFractionDigits: (v%1?2:0), maximumFractionDigits:2});
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+function num(v){ const n = parseFloat(String(v).replace(/[^\d.\-]/g,'')); return isFinite(n) ? n : '' }
+/** '1.3.0' >= '1.3.0' → true */
+function verAtLeast(a, b){
+  const p = s => String(s).split('.').map(x => parseInt(x,10) || 0);
+  const x = p(a), y = p(b);
+  for(let i=0;i<Math.max(x.length,y.length);i++){
+    const d = (x[i]||0) - (y[i]||0);
+    if(d) return d > 0;
+  }
+  return true;
+}
+
+/* ---------- 儲存 ---------- */
+function load(){
+  try{ const r = JSON.parse(localStorage.getItem(K_REC)||'[]'); if(Array.isArray(r)) R = r }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem(K_DUE)||'[]'); if(Array.isArray(d)) DUE = d }catch(e){}
+  try{
+    const s = JSON.parse(localStorage.getItem(K_SET)||'null');
+    if(s){
+      S.endpoint = s.endpoint || '';
+      S.currency = s.currency || 'MOP$';
+      S.scriptVer = s.scriptVer || '';
+      S.oldScript = !!s.oldScript;
+      if(s.options){
+        ['services','events','expTypes'].forEach(k => {
+          if(Array.isArray(s.options[k]) && s.options[k].length) S.options[k] = s.options[k];
+        });
+      }
+    }
+  }catch(e){}
+}
+function saveR(){ try{ localStorage.setItem(K_REC, JSON.stringify(R)) }catch(e){ toast('儲存失敗，空間可能已滿') } }
+function saveS(){ try{ localStorage.setItem(K_SET, JSON.stringify(S)) }catch(e){} }
+function saveD(){ try{ localStorage.setItem(K_DUE, JSON.stringify(DUE)) }catch(e){ toast('儲存失敗，空間可能已滿') } }
+
+let toastT;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(()=>t.classList.remove('on'), 2200);
+}
+
+/* ---------- 表單渲染 ---------- */
+function renderType(){
+  $$('#seg button').forEach(b => b.classList.toggle('on', b.dataset.type === type));
+  const inc = type === 'income';
+  $('#amtLabel').textContent = inc ? '收入費用' : 'Cost';
+  $('#save').textContent = editingId ? '儲存修改' : (inc ? '儲存這筆收入' : '儲存這筆支出');
+  $('#dateLabel').textContent = inc ? '租用時間' : '支出日期';
+  $('#noteLabel').textContent = inc ? '備註' : 'Notes';
+  $('#amtRow').className = 'amount-row ' + (inc ? 'inc' : 'exp');
+  $('#recvRow').style.display = inc ? 'flex' : 'none';
+  $('#incCard').style.display = inc ? 'block' : 'none';
+  $('#expCard').style.display = inc ? 'none' : 'block';
+}
+
+function chipList(el, list, isOn, onTap){
+  el.innerHTML = list.map(v => `<button class="chip ${isOn(v)?'on':''}" data-v="${esc(v)}">${esc(v)}</button>`).join('');
+  Array.from(el.querySelectorAll('.chip')).forEach(b => b.onclick = () => onTap(b.dataset.v));
+}
+function renderServices(){
+  chipList($('#services'), S.options.services, v => services.includes(v), v => {
+    services = services.includes(v) ? services.filter(x => x !== v) : services.concat(v);
+    renderServices();
+  });
+}
+function renderEvents(){
+  chipList($('#events'), S.options.events, v => eventType === v, v => {
+    eventType = (eventType === v) ? null : v;
+    renderEvents();
+  });
+}
+function renderExpTypes(){
+  chipList($('#expTypes'), S.options.expTypes, v => expType === v, v => {
+    expType = (expType === v) ? null : v;
+    renderExpTypes();
+  });
+}
+
+function setDate(iso){
+  dateISO = iso;
+  $('#date').value = iso;
+  Array.from(document.querySelectorAll('#dateChips .chip[data-off]')).forEach(c => {
+    const d = new Date(); d.setDate(d.getDate() + Number(c.dataset.off));
+    c.classList.toggle('on', localISO(d) === iso);
+  });
+}
+
+/* ---------- 清空表單 ---------- */
+function resetForm(){
+  $('#amount').value = ''; $('#received').value = '';
+  $('#client').value = ''; $('#venue').value = ''; $('#hours').value = '';
+  $('#prints').value = ''; $('#source').value = ''; $('#note').value = '';
+  $('#spender').value = ''; $('#dealer').checked = false;
+  services = []; eventType = null; expType = null;
+  renderServices(); renderEvents(); renderExpTypes();
+}
+
+/* ---------- 編輯既有記錄 ---------- */
+function fillForm(r){
+  type = r.type === 'expense' ? 'expense' : 'income';
+  services = Array.isArray(r.services) ? r.services.slice() : [];
+  eventType = r.eventType || null;
+  expType = r.expType || null;
+
+  $('#amount').value = (r.amount === '' || r.amount == null) ? '' : String(r.amount);
+  // 實收跟收入費用相同時留空，改金額就會自動跟著變（跟新增時的行為一致）
+  $('#received').value = (r.type === 'income' && r.received !== '' && r.received != null
+      && Number(r.received) !== Number(r.amount)) ? String(r.received) : '';
+  $('#hours').value = (r.hours === '' || r.hours == null) ? '' : String(r.hours);
+  $('#prints').value = (r.prints === '' || r.prints == null) ? '' : String(r.prints);
+  $('#client').value = r.client || '';
+  $('#venue').value = r.venue || '';
+  $('#source').value = r.source || '';
+  $('#spender').value = r.spender || '';
+  $('#note').value = r.note || '';
+  $('#dealer').checked = !!r.dealer;
+
+  renderType(); renderServices(); renderEvents(); renderExpTypes();
+  setDate(r.date || todayISO());
+}
+
+function startEdit(id){
+  const r = R.find(x => x.id === id);
+  if(!r){ toast('找不到這筆記錄'); return }
+  editingId = id;
+  fillForm(r);
+  const label = r.type === 'income'
+    ? (r.client || (r.services || [])[0] || '收入')
+    : (r.expType || '支出');
+  $('#editInfo').textContent = (r.date || '').replace(/-/g, '/') + '　' + label;
+  $('#editBar').classList.add('on');
+  renderType();
+  go('entry');
+  $('#main').scrollTop = 0;
+}
+
+function cancelEdit(){
+  if(!editingId) return;
+  editingId = null;
+  $('#editBar').classList.remove('on');
+  resetForm();
+  renderType();
+  toast('已取消編輯');
+}
+
+/* ---------- 儲存一筆 ---------- */
+async function saveEntry(){
+  const amt = num($('#amount').value);
+  if(!amt || amt <= 0){
+    $('#amount').focus();
+    $('#amtRow').classList.add('shake');
+    setTimeout(()=>$('#amtRow').classList.remove('shake'), 420);
+    toast(type==='income' ? '先輸入收入費用' : '先輸入 Cost');
+    return;
+  }
+  if(type === 'income' && !services.length){ toast('選一個服務類型'); return }
+  if(type === 'expense' && !expType){ toast('選一個支出類型'); return }
+
+  const base = {
+    type, date: dateISO,
+    amount: Math.round(amt*100)/100,
+    received: type === 'income'
+      ? Math.round(($('#received').value.trim() === '' ? amt : num($('#received').value)) * 100) / 100
+      : '',
+    services: type === 'income' ? services.slice() : [],
+    eventType: type === 'income' ? (eventType || '') : '',
+    hours: type === 'income' ? num($('#hours').value) : '',
+    prints: type === 'income' ? num($('#prints').value) : '',
+    client: type === 'income' ? $('#client').value.trim() : '',
+    venue: type === 'income' ? $('#venue').value.trim() : '',
+    source: type === 'income' ? $('#source').value.trim() : '',
+    dealer: type === 'income' ? $('#dealer').checked : false,
+    expType: type === 'expense' ? (expType || '') : '',
+    spender: type === 'expense' ? $('#spender').value.trim() : '',
+    note: $('#note').value.trim()
+  };
+
+  const isEdit = !!editingId;
+  let rec;
+
+  if(isEdit){
+    const i = R.findIndex(x => x.id === editingId);
+    if(i < 0){ editingId = null; $('#editBar').classList.remove('on'); toast('找不到這筆記錄'); return }
+    const old = R[i];
+    rec = Object.assign({}, base, {
+      id: old.id,
+      createdAt: old.createdAt || new Date().toISOString(),
+      synced: false,
+      needsUpdate: !!(old.synced || old.needsUpdate)   // 已在 Sheet 裡 → 用更新而非新增
+    });
+    R[i] = rec;
+    editingId = null;
+    $('#editBar').classList.remove('on');
+  } else {
+    rec = Object.assign({}, base, {
+      id: uid(), createdAt: new Date().toISOString(), synced: false
+    });
+    R.unshift(rec);
+  }
+  saveR();
+
+  // 清空（保留日期與類型，方便連續輸入）
+  resetForm();
+  renderType();
+
+  // 明細頁跟著切到剛記的類型
+  listType = rec.type;
+  Array.from(document.querySelectorAll('#listSeg button')).forEach(x => x.classList.toggle('on', x.dataset.lt === rec.type));
+  syncGroupSeg();
+
+  renderHead(); renderList(); renderSettings();
+
+  toast((isEdit ? '已更新 ' : '已記錄 ') + S.currency + money(rec.type==='income' ? rec.received : rec.amount));
+  if(navigator.vibrate) navigator.vibrate(8);
+
+  if(S.endpoint){
+    const res = await push(rec);
+    if(res.ok){
+      rec.synced = true; rec.needsUpdate = false; saveR(); renderList(); renderSettings();
+      if(res.code === 'APPENDED') toast('Sheet 原本那列不見了，已重新新增');
+    } else {
+      saveR(); renderList(); renderSettings();
+      if(res.code === 'OLD_SCRIPT'){
+        S.oldScript = true; saveS();
+        toast('Sheet 沒更新：Apps Script 還是舊版，請照設定頁步驟重新部署');
+      } else if(isEdit){
+        toast('已更新手機資料，但還沒寫進 Sheet（待同步）');
+      } else {
+        toast('已記錄在手機，還沒寫進 Sheet（待同步）');
+      }
+    }
+  }
+}
+
+/* ---------- 同步 ---------- */
+/* 回傳 {ok, code, err}：一定要伺服器明確說「改了哪一列」才算成功，
+   避免舊版腳本回 ok:true 但其實什麼都沒做（編輯靜默失敗） */
+async function push(rec){
+  if(!S.endpoint) return {ok:false, code:'NO_ENDPOINT', err:'尚未設定網址'};
+  const isUpdate = !!rec.needsUpdate;
+  try{
+    const res = await fetch(S.endpoint, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify(isUpdate ? Object.assign({}, rec, { mode:'update' }) : rec),
+      redirect:'follow'
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    let data = null;
+    try{ data = await res.json() }catch(e){}
+    if(!data || typeof data !== 'object') return {ok:false, code:'BAD_RESPONSE', err:'回應不是 JSON'};
+    if(data.ok === false) return {ok:false, code:'SERVER', err:String(data.error || '伺服器錯誤')};
+
+    if(isUpdate){
+      if(data.updated === true) return {ok:true, row:data.row};
+      if(data.appended === true) return {ok:true, code:'APPENDED', row:data.row};
+      // 舊版腳本會走到這裡：回 dup / 只有 ok，其實沒改任何一列
+      return {ok:false, code:'OLD_SCRIPT', err:'腳本未支援編輯（回 dup）'};
+    }
+    return {ok:true, row:data.row};
+  }catch(err){
+    console.warn('sync failed', err);
+    return {ok:false, code:'NETWORK', err:String(err.message || err)};
+  }
+}
+async function pushDelete(rec){
+  if(!S.endpoint) return false;
+  try{
+    const res = await fetch(S.endpoint, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ id: rec.id, type: rec.type, mode:'delete' }),
+      redirect:'follow'
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    let data = {};
+    try{ data = await res.json() }catch(e){}
+    if(data && data.ok === false) throw new Error(data.error || 'server error');
+    return true;
+  }catch(err){ console.warn('delete failed', err); return false }
+}
+
+function refreshAll(){ renderHead(); renderList(); renderSettings() }
+
+async function removeRecord(id){
+  const i = R.findIndex(x => x.id === id);
+  if(i < 0) return;
+  const rec = R[i];
+  const inSheet = !!(rec.synced || rec.needsUpdate);
+
+  if(inSheet && S.endpoint &&
+     !confirm('刪除後 Google Sheet 裡那一列也會一起刪掉，無法復原。\n\n確定要刪除嗎？')) return;
+
+  // 從沒寫進 Sheet，或根本沒連線 → 直接從手機移除
+  if(!inSheet || !S.endpoint){
+    R.splice(i, 1); saveR(); refreshAll();
+    toast(inSheet ? '已從手機刪除（未連線，Sheet 那行還在）' : '已刪除');
+    return;
+  }
+
+  // 先標記成待刪除，刪失敗還能重試
+  rec.deleted = true; rec.synced = false; rec.needsUpdate = false;
+  saveR(); refreshAll();
+
+  const ok = await pushDelete(rec);
+  if(ok){
+    R = R.filter(x => x.id !== id); saveR(); refreshAll();
+    toast('已刪除，Google Sheet 那行也刪了');
+  } else {
+    toast('已從手機刪除，Sheet 那行待同步刪除');
+  }
+}
+
+/* ---------- 從 Sheet 載入歷史 ---------- */
+let pulling = false;
+async function pullHistory(){
+  if(!S.endpoint){ toast('先在設定頁貼上 Sheet 網址'); return }
+  if(pulling) return;
+  pulling = true;
+  toast('讀取中…');
+  const btn = $('#pullHist'); if(btn) btn.disabled = true;
+  try{
+    const url = S.endpoint + (S.endpoint.indexOf('?') >= 0 ? '&' : '?')
+              + 'action=list&_t=' + Date.now();
+    const res = await fetch(url, {redirect:'follow'});
+    const d = await res.json();
+    if(!d || d.ok !== true) throw new Error((d && d.error) || '回應異常');
+
+    // 舊版腳本的 doGet 只回 ok/service，沒有 income/expense
+    if(!('income' in d) && !('expense' in d)){
+      toast('腳本還是舊版，請到 Apps Script 更新部署');
+      pulling = false; if(btn) btn.disabled = false;
+      return;
+    }
+
+    const incoming = [].concat(d.income || [], d.expense || []);
+    const have = new Set(R.map(r => r.id));
+    let added = 0;
+    incoming.forEach(r => {
+      if(!r || !r.id || have.has(r.id)) return;
+      r.synced = true;
+      R.push(r); have.add(r.id); added++;
+    });
+
+    if(added){
+      R.sort((a,b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+      saveR(); renderHead(); renderList(); renderSettings();
+    }
+    toast(added ? `已載入 ${added} 筆歷史記錄`
+                : (incoming.length ? `沒有新的記錄（Sheet 共 ${incoming.length} 筆都已在手機）`
+                                    : 'Sheet 裡沒有資料，先匯入 xlsx'));
+  }catch(e){
+    toast('讀取失敗：' + String(e.message || e).slice(0, 42));
+  }
+  pulling = false;
+  if(btn) btn.disabled = false;
+}
+
+async function syncPending(){
+  if(syncing || !S.endpoint) return;
+  const pend = R.filter(r => !r.synced);
+  if(!pend.length){ toast('沒有待同步的記錄'); return }
+  syncing = true; toast('同步中…');
+  let ok = 0, oldScript = false;
+  for(const r of pend){
+    if(r.deleted){
+      if(await pushDelete(r)){ R = R.filter(x => x.id !== r.id); ok++ }
+    } else {
+      const res = await push(r);
+      if(res.ok){ r.synced = true; r.needsUpdate = false; ok++ }
+      else if(res.code === 'OLD_SCRIPT'){ oldScript = true; break }
+    }
+  }
+  saveR(); syncing = false;
+  if(oldScript){ S.oldScript = true; saveS() }
+  renderList(); renderSettings();
+  toast(oldScript ? '腳本還是舊版，改了也不會進 Sheet，請先更新部署'
+                  : (ok ? `已同步 ${ok} 筆` : '同步失敗，請檢查網址'));
+}
+
+/* ---------- 統計 ---------- */
+function renderHead(){
+  const mk = todayISO().slice(0,7);
+  const [y,m] = mk.split('-');
+  $('#headMonth').textContent = `${y} 年 ${Number(m)} 月`;
+
+  let inc=0, exp=0;
+  active().forEach(r => {
+    if(r.date.slice(0,7) !== mk) return;
+    if(r.type === 'income') inc += Number(r.received || r.amount);
+    else exp += Number(r.amount);
+  });
+  const net = inc - exp;
+  $('#headNet').textContent = (net >= 0 ? '+' : '-') + S.currency + money(Math.abs(net));
+  $('#headNet').style.color = net >= 0 ? 'var(--income)' : 'var(--expense)';
+  $('#headSub').textContent = `收 ${money(inc)} · 支 ${money(exp)}`;
+  $('#curSym').textContent = S.currency;
+}
+
+/* ---------- 明細 ---------- */
+function syncGroupSeg(){
+  $$('#groupSeg button').forEach(b => b.classList.toggle('on', b.dataset.g === groupBy));
+  $('#groupSeg').style.display = listType === 'income' ? '' : 'none';
+}
+function setListType(v){
+  listType = v;
+  Array.from(document.querySelectorAll('#listSeg button')).forEach(x => x.classList.toggle('on', x.dataset.lt === v));
+  syncGroupSeg();
+  renderList();
+}
+
+function renderList(){
+  const mk = todayISO().slice(0,7);
+  const live = active();
+  const inRange = range === 'month' ? live.filter(r => r.date.slice(0,7) === mk) : live.slice();
+  const rows = inRange.filter(r => r.type === listType);
+  const isInc = listType === 'income';
+
+  const sum = (arr, inc) => arr.reduce((a,r) => a + Number(inc ? (r.received || r.amount) : r.amount), 0);
+  const totalOf = t => sum(inRange.filter(r => r.type === t), t === 'income');
+  const main = sum(rows, isInc);
+  const incAll = totalOf('income'), expAll = totalOf('expense');
+  const net = incAll - expAll;
+
+  $('#lsK').textContent = (range === 'month' ? '本月' : '全部') + (isInc ? '收入' : '支出');
+  $('#lsMain').textContent = S.currency + money(main);
+  $('#lsMain').style.color = isInc ? 'var(--income)' : 'var(--expense)';
+  $('#lsCount').textContent = rows.length + ' 筆';
+  $('#lsSub').innerHTML =
+    (isInc ? `支出 ${S.currency}${money(expAll)}` : `收入 ${S.currency}${money(incAll)}`) +
+    ` · 結餘 <b style="color:${net >= 0 ? 'var(--income)' : 'var(--expense)'}">` +
+    `${net < 0 ? '-' : '+'}${S.currency}${money(Math.abs(net))}</b>`;
+
+  if(!rows.length){
+    $('#listBody').innerHTML = `<div class="empty"><div class="e">${isInc ? '💰' : '🧾'}</div>
+      <p>${range === 'month' ? '本月' : ''}還沒有${isInc ? '收入' : '支出'}記錄<br>
+      切到「記一筆」開始吧</p></div>`;
+    return;
+  }
+
+  const today = todayISO();
+  const yest = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return localISO(d) })();
+  const byDate = !isInc || groupBy === 'date';
+
+  // 分組：日期 / 服務類型 / 活動類型
+  const groups = new Map();
+  rows.forEach(r => {
+    let k;
+    if(byDate) k = r.date;
+    else if(groupBy === 'service') k = (r.services||[]).filter(Boolean).join('、') || '未分類';
+    else k = r.eventType || '未分類';
+    if(!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  });
+
+  // 日期 → 新到舊；分類 → 金額高的在前，「未分類」墊底
+  const keys = Array.from(groups.keys());
+  if(byDate) keys.sort().reverse();
+  else keys.sort((a,b) => {
+    if(a === '未分類') return 1;
+    if(b === '未分類') return -1;
+    return sum(groups.get(b), isInc) - sum(groups.get(a), isInc);
+  });
+
+  const fullDate = d => (d || '').replace(/-/g, '/');
+
+  let html = '';
+  keys.forEach(k => {
+    const items = groups.get(k).sort((a,b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+    const gTotal = sum(items, isInc);
+    const label = byDate
+      ? (k === today ? '今天' : k === yest ? '昨天' : k.replace(/-/g,'/'))
+      : k;
+    html += `<div class="daygrp"><div class="dayhead"><span class="gname"><b>${esc(label)}</b>${
+      byDate ? '' : `<span class="n">${items.length} 筆</span>`}</span>
+      <span class="t">${isInc ? '+' : '-'}${S.currency}${money(gTotal)}</span>
+      </div><div class="daycard">`;
+    items.forEach(r => {
+      // 分類檢視時組名已經講了分類，行內就改顯示客戶，避免重複
+      const svc = (r.services||[]).filter(Boolean).join('、');
+      let title, sub;
+      if(!isInc){
+        title = r.expType || '支出';
+        sub = [r.note, r.spender].filter(Boolean).join(' · ');
+      } else if(byDate){
+        title = svc || r.client || '收入';
+        sub = [r.client, r.eventType, r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
+      } else if(groupBy === 'service'){
+        title = r.client || r.eventType || '—';
+        sub = [fullDate(r.date), r.client ? r.eventType : '', r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
+      } else {
+        title = svc || r.client || '收入';
+        sub = [fullDate(r.date), r.client, r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
+      }
+      const amt = isInc ? Number(r.received || r.amount) : Number(r.amount);
+      html += `<div class="row" data-id="${r.id}">
+        <div class="mid"><div class="t1">${esc(title)}</div>${sub ? `<div class="t2">${esc(sub)}</div>` : ''}</div>
+        <div class="amt ${isInc?'inc':'exp'}">${isInc?'+':'-'}${S.currency}${money(amt)}</div>
+        ${r.synced?'':'<span class="dot"></span>'}
+      </div>`;
+    });
+    html += `</div></div>`;
+  });
+  $('#listBody').innerHTML = html;
+  Array.from(document.querySelectorAll('#listBody .row')).forEach(el => el.onclick = () => openRecord(el.dataset.id));
+}
+
+/* ---------- 待收款（純提醒，不影響收支與 Sheet） ---------- */
+let editingDue = null;
+
+function fmtDueDate(d){
+  if(!d) return '';
+  const t = todayISO();
+  if(d === t) return '今天';
+  const x = new Date(); x.setDate(x.getDate() - 1);
+  if(d === localISO(x)) return '昨天';
+  return d.replace(/-/g,'/');
+}
+
+function renderDue(){
+  const open = DUE.filter(d => !d.done).sort((a,b) => (a.date||'') < (b.date||'') ? -1 : (a.date||'') > (b.date||'') ? 1 : 0);
+  const done = DUE.filter(d => d.done).sort((a,b) => (b.doneAt||'') > (a.doneAt||'') ? 1 : -1);
+  const total = open.reduce((a,d) => a + (Number(d.amount) || 0), 0);
+
+  $('#dueMain').textContent = S.currency + money(total);
+  $('#dueMain').style.color = 'var(--ink)';
+  $('#dueCount').textContent = open.length + ' 筆';
+  $('#dueSub').textContent = open.length
+    ? (done.length ? `另有 ${done.length} 筆已收款` : '收到錢後點右邊圓圈')
+    : (done.length ? `${done.length} 筆已收款` : '還沒有待收的款項');
+
+  if(!DUE.length){
+    $('#dueBody').innerHTML = `<div class="empty"><div class="e">🧾</div>
+      <p>還沒有待收款項<br>按右上角「＋ 新增」記一筆</p></div>`;
+    return;
+  }
+
+  const item = d => `<div class="row due-item${d.done ? ' done' : ''}" data-id="${d.id}">
+      <div class="mid">
+        <div class="t1">${esc(d.title)}</div>
+        <div class="t2">${esc(fmtDueDate(d.date))}${d.note ? ' · ' + esc(d.note) : ''}</div>
+      </div>
+      <div class="amt">${S.currency}${money(d.amount)}</div>
+      <button class="chk${d.done ? ' on' : ''}" data-chk="${d.id}" aria-label="標記已收款">
+        <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+      </button>
+    </div>`;
+
+  let html = '';
+  if(open.length) html += `<div class="due-sec">未收款</div><div class="daycard">${open.map(item).join('')}</div>`;
+  if(done.length) html += `<div class="due-sec">已收款</div><div class="daycard">${done.map(item).join('')}</div>`;
+  $('#dueBody').innerHTML = html;
+
+  $$('#dueBody .due-item').forEach(el => el.onclick = () => openDueSheet(el.dataset.id));
+  $$('#dueBody .chk').forEach(el => el.onclick = e => { e.stopPropagation(); toggleDue(el.dataset.chk) });
+}
+
+function toggleDue(id){
+  const d = DUE.find(x => x.id === id); if(!d) return;
+  d.done = !d.done;
+  d.doneAt = d.done ? new Date().toISOString() : '';
+  saveD(); renderDue();
+  if(navigator.vibrate) navigator.vibrate(8);
+  if(d.done) toast('已收款 · ' + d.title);
+}
+
+function openDueSheet(id){
+  const d = id ? DUE.find(x => x.id === id) : null;
+  editingDue = d ? d.id : null;
+  $('#dueSheetTitle').textContent = d ? '編輯待收款' : '新增待收款';
+  $('#dueForm').innerHTML = `
+    <div class="field first"><div class="lab">客戶 / 說明</div>
+      <input class="inp" id="dTitle" placeholder="例如：EstherSun 尾款" autocomplete="off"></div>
+    <div class="field"><div class="lab">金額</div>
+      <input class="inp" id="dAmount" inputmode="decimal" placeholder="0"></div>
+    <div class="field"><div class="lab">日期</div>
+      <input class="inp" type="date" id="dDate"></div>
+    <div class="field"><div class="lab">備註</div>
+      <input class="inp" id="dNote" placeholder="選填" autocomplete="off"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn" id="dSave" style="flex:1">${d ? '儲存修改' : '加入清單'}</button>
+      ${d ? '<button class="btn ghost" id="dDel" style="flex:0 0 auto;width:auto;padding:16px 18px;color:var(--expense)">刪除</button>' : ''}
+    </div>`;
+  $('#dTitle').value = d ? d.title : '';
+  $('#dAmount').value = d ? d.amount : '';
+  $('#dDate').value = d ? d.date : todayISO();
+  $('#dNote').value = d ? (d.note || '') : '';
+  $('#dueSheet').classList.add('on'); $('#scrim').classList.add('on');
+  $('#dSave').onclick = saveDueForm;
+  if(d) $('#dDel').onclick = () => {
+    if(!confirm('刪掉「' + d.title + '」這筆待收款？')) return;
+    DUE = DUE.filter(x => x.id !== d.id);
+    saveD(); closeSheet(); renderDue();
+    toast('已刪除');
+  };
+  if(!d) setTimeout(() => $('#dTitle').focus(), 280);
+}
+
+function saveDueForm(){
+  const title = $('#dTitle').value.trim();
+  const amt = num($('#dAmount').value);
+  if(!title){ toast('填一下客戶或說明'); $('#dTitle').focus(); return }
+  if(!amt || amt <= 0){ toast('填一下金額'); $('#dAmount').focus(); return }
+  const date = $('#dDate').value || todayISO();
+  const note = $('#dNote').value.trim();
+  const val = Math.round(amt * 100) / 100;
+
+  if(editingDue){
+    const d = DUE.find(x => x.id === editingDue);
+    if(d){ d.title = title; d.amount = val; d.date = date; d.note = note }
+    toast('已更新');
+  } else {
+    DUE.unshift({ id: uid(), title, amount: val, date, note, done: false, doneAt: '', createdAt: new Date().toISOString() });
+    toast('已加入待收款');
+  }
+  saveD(); closeSheet(); renderDue();
+}
+
+function openRecord(id){
+  const r = R.find(x => x.id === id); if(!r || r.deleted) return;
+  const isInc = r.type === 'income';
+  const rows = isInc ? [
+    ['租用時間', r.date],
+    ['服務類型', (r.services||[]).join(', ')],
+    ['收入費用', S.currency + money(r.amount)],
+    ['實收費用', S.currency + money(r.received)],
+    ['活動類型', r.eventType],
+    ['鐘數', r.hours],
+    ['客戶/公司名稱', r.client],
+    ['地點', r.venue],
+    ['接單來源', r.source],
+    ['印相張數', r.prints],
+    ['備註', r.note],
+    ['行家單', r.dealer ? '✓' : '']
+  ] : [
+    ['支出日期', r.date],
+    ['Cost', S.currency + money(r.amount)],
+    ['類型', r.expType],
+    ['Notes', r.note],
+    ['支出者', r.spender]
+  ];
+  $('#sheetBody').innerHTML = `
+    <h3>${isInc ? '收入記錄' : '支出記錄'}</h3>
+    ${rows.map(([k,v]) => `<div class="kv"><span class="k">${k}</span><span class="v">${esc(v) || '—'}</span></div>`).join('')}
+    <div class="kv"><span class="k">同步狀態</span><span class="v">${
+      r.needsUpdate ? '已改動，待更新 Google Sheet'
+      : (r.synced ? '已寫入 Google Sheet' : '待同步')
+    }</span></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn" id="editRec" style="flex:2">編輯這筆</button>
+      <button class="btn ghost" id="delRec" style="flex:1;color:var(--expense)">刪除</button>
+    </div>
+    ${(r.synced && S.endpoint) ? '<button class="btn small ghost" id="resyncRec" style="width:100%;margin-top:8px">重新寫入 Google Sheet</button>' : ''}
+    <p class="hint">點空白處可關閉。刪除會同時刪掉 Google Sheet 裡的那一列。</p>`;
+  openSheet();
+  $('#editRec').onclick = () => { closeSheet(); startEdit(id) };
+  $('#delRec').onclick = () => { closeSheet(); removeRecord(id) };
+  const rs = $('#resyncRec');
+  if(rs) rs.onclick = async () => {
+    closeSheet();
+    r.synced = false; r.needsUpdate = true; saveR(); refreshAll();
+    toast('寫入中…');
+    const res = await push(r);
+    if(res.ok){
+      r.synced = true; r.needsUpdate = false; saveR(); refreshAll();
+      toast(res.code === 'APPENDED' ? 'Sheet 找不到原列，已新增一列' : '已重新寫入 Google Sheet');
+    } else {
+      saveR(); refreshAll();
+      toast(res.code === 'OLD_SCRIPT' ? '腳本還是舊版，請先更新部署' : '寫入失敗：' + String(res.err).slice(0,40));
+    }
+  };
+}
+function openSheet(){ $('#sheet').classList.add('on'); $('#scrim').classList.add('on') }
+function closeSheet(){ ['#sheet','#dueSheet'].forEach(s => $(s).classList.remove('on')); $('#scrim').classList.remove('on') }
+window.closeSheet = closeSheet;
+
+/* ---------- 設定 ---------- */
+function renderSettings(){
+  const ep = S.endpoint;
+  $('#endpoint').value = ep;
+  $('#epPill').textContent = ep ? '已設定' : '未連線';
+  $('#epPill').className = 'pill ' + (ep ? 'ok' : 'off');
+  let desc = ep ? '新記錄會自動寫進你的試算表' : '尚未設定，資料只存在這支手機';
+  if(ep && S.oldScript){
+    desc = S.scriptVer ? '腳本 v' + S.scriptVer + ' · 舊版，編輯與刪除不會生效'
+                       : '腳本版本過舊 · 編輯與刪除不會生效';
+  } else if(ep && S.scriptVer){
+    desc = '腳本 v' + S.scriptVer + ' · 支援編輯與刪除';
+  }
+  $('#epDesc').textContent = desc;
+  $('#verWarn').style.display = (ep && S.oldScript) ? 'block' : 'none';
+
+  const pendNew = R.filter(r => !r.synced && !r.deleted).length;
+  const pendDel = R.filter(r => !r.synced && r.deleted).length;
+  $('#pendDesc').textContent = (pendNew || pendDel)
+    ? [pendNew ? `${pendNew} 筆待同步` : '', pendDel ? `${pendDel} 筆待刪除` : ''].filter(Boolean).join(' · ')
+    : '全部已同步';
+  $('#syncNow').disabled = !ep || !(pendNew || pendDel);
+
+  $('#currency').value = S.currency;
+  $('#optServices').value = S.options.services.join(', ');
+  $('#optEvents').value = S.options.events.join(', ');
+  $('#optExpTypes').value = S.options.expTypes.join(', ');
+  $('#srcList').innerHTML = SOURCES.map(s => `<option value="${esc(s)}">`).join('');
+}
+
+/* ---------- CSV ---------- */
+function exportCSV(){
+  const rows = active().filter(r => r.type === type);
+  if(!rows.length){ toast('這個類型還沒有資料'); return }
+  const inc = type === 'income';
+  const head = inc
+    ? ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID']
+    : ['支出日期','Cost','類型','Notes','支出者','ID'];
+  const lines = [head.join(',')];
+  rows.forEach(r => {
+    const row = inc
+      ? [r.date,(r.services||[]).join(', '),r.amount,r.received,r.eventType,r.hours,r.client,r.venue,r.source,r.prints,r.note,r.dealer?'checked':'',r.id]
+      : [r.date,r.amount,r.expType,r.note,r.spender,r.id];
+    lines.push(row.map(v => `"${String(v==null?'':v).replace(/"/g,'""')}"`).join(','));
+  });
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (inc ? '收入-' : '支出-') + todayISO() + '.csv';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 3000);
+  toast('已匯出 ' + rows.length + ' 筆');
+}
+
+/* ---------- 導航 ---------- */
+function go(v){
+  Array.from(document.querySelectorAll('.view')).forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  Array.from(document.querySelectorAll('#tabbar button')).forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  document.body.dataset.view = v;
+  $('#main').scrollTop = 0;
+  if(v === 'list') renderList();
+  if(v === 'due') renderDue();
+  if(v === 'set') renderSettings();
+}
+
+/* ---------- 綁定 ---------- */
+function bind(){
+  Array.from(document.querySelectorAll('#seg button')).forEach(b => b.onclick = () => {
+    if(editingId && b.dataset.type !== type){ toast('編輯時不能改收支類型，請取消後重記'); return }
+    type = b.dataset.type;
+    renderType();
+    renderSettings();
+  });
+  Array.from(document.querySelectorAll('#tabbar button')).forEach(b => b.onclick = () => go(b.dataset.view));
+
+  const cleanNum = e => { e.target.value = e.target.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1') };
+  $('#amount').addEventListener('input', cleanNum);
+  $('#received').addEventListener('input', cleanNum);
+  $('#hours').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d]/g,'') });
+  $('#prints').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d]/g,'') });
+  $('#amount').addEventListener('keydown', e => { if(e.key === 'Enter') saveEntry() });
+
+  $('#sameBtn').onclick = () => {
+    $('#received').value = $('#amount').value;
+    if(navigator.vibrate) navigator.vibrate(6);
+  };
+
+  Array.from(document.querySelectorAll('#dateChips .chip[data-off]')).forEach(c => c.onclick = () => {
+    const d = new Date(); d.setDate(d.getDate() + Number(c.dataset.off));
+    setDate(localISO(d));
+  });
+  $('#date').addEventListener('change', e => { if(e.target.value) setDate(e.target.value) });
+
+  $('#save').onclick = saveEntry;
+  $('#cancelEdit').onclick = cancelEdit;
+
+  Array.from(document.querySelectorAll('#listSeg button')).forEach(b => b.onclick = () => setListType(b.dataset.lt));
+  $$('#groupSeg button').forEach(b => b.onclick = () => { groupBy = b.dataset.g; syncGroupSeg(); renderList() });
+
+  Array.from(document.querySelectorAll('#rangeSeg button')).forEach(b => b.onclick = () => {
+    range = b.dataset.range;
+    Array.from(document.querySelectorAll('#rangeSeg button')).forEach(x => x.classList.toggle('on', x === b));
+    renderList();
+  });
+
+  $('#saveEp').onclick = () => {
+    let v = $('#endpoint').value.trim();
+    if(v && !/^https:\/\/script\.google\.com\//.test(v)){
+      toast('網址看起來不對，應以 script.google.com 開頭'); return;
+    }
+    S.endpoint = v; saveS(); renderSettings();
+    toast(v ? '已儲存，之後每筆都會自動寫入' : '已清除連線');
+  };
+  $('#testEp').onclick = async () => {
+    const v = $('#endpoint').value.trim();
+    if(!v){ toast('先貼上網址'); return }
+    toast('測試中…');
+    try{
+      const res = await fetch(v, {method:'GET', redirect:'follow'});
+      const d = await res.json();
+      if(d && d.ok){
+        S.endpoint = v;
+        if(d.version){
+          S.scriptVer = d.version;
+          S.oldScript = !verAtLeast(d.version, '1.3.0');
+        } else {
+          S.scriptVer = '';
+          S.oldScript = true;   // 沒有版本號 = 舊版
+        }
+        saveS(); renderSettings();
+        if(S.oldScript) toast('連線正常，但腳本 v' + d.version + ' 太舊：編輯/刪除會失效，請重新部署');
+        else toast('連線正常 ✓' + (d.sheet ? '　目標：' + d.sheet : ''));
+      } else if(d && d.error){
+        toast('連線成功，但讀不到試算表：' + String(d.error).slice(0, 48));
+      } else toast('回應異常，請確認存取權限設為「任何人」');
+    }catch(e){ toast('連不上，請確認網址與存取權限') }
+  };
+  $('#syncNow').onclick = syncPending;
+  $('#pullHist').onclick = pullHistory;
+  $('#dueAdd').onclick = () => openDueSheet(null);
+  $('#currency').onchange = e => { S.currency = e.target.value; saveS(); renderHead(); renderList() };
+
+  $('#saveOpts').onclick = () => {
+    const parse = v => v.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
+    const a = parse($('#optServices').value), b = parse($('#optEvents').value), c = parse($('#optExpTypes').value);
+    if(!a.length || !b.length || !c.length){ toast('每一欄至少留一個選項'); return }
+    S.options.services = a; S.options.events = b; S.options.expTypes = c;
+    saveS(); renderServices(); renderEvents(); renderExpTypes(); renderSettings();
+    toast('選項已更新');
+  };
+
+  $('#csv').onclick = exportCSV;
+  $('#wipe').onclick = () => {
+    if(!confirm('確定清空這支手機上的所有記錄？此動作無法復原。')) return;
+    R = []; saveR(); renderHead(); renderList(); renderSettings(); toast('已清空');
+  };
+
+  $('#gsBox').textContent = document.getElementById('gsSource').textContent.trim();
+  $('#toggleGs').onclick = () => {
+    const b = $('#gsBox'); b.style.display = b.style.display === 'none' ? 'block' : 'none';
+  };
+  $('#copyGs').onclick = async () => {
+    const code = document.getElementById('gsSource').textContent.trim();
+    try{ await navigator.clipboard.writeText(code); toast('程式碼已複製') }
+    catch(e){
+      const ta = document.createElement('textarea'); ta.value = code; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); ta.remove(); toast('程式碼已複製');
+    }
+  };
+
+  $('#scrim').onclick = closeSheet;
+  window.addEventListener('online', () => { if(S.endpoint) syncPending() });
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible' && S.endpoint) syncPending();
+  });
+}
+
+/* ---------- 啟動 ---------- */
+load();
+document.body.dataset.view = 'entry';
+bind();
+renderType();
+renderServices();
+renderEvents();
+renderExpTypes();
+setDate(todayISO());
+renderHead();
+syncGroupSeg();
+renderList();
+renderDue();
+renderSettings();
+
+if('serviceWorker' in navigator && location.protocol === 'https:'){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js', {updateViaCache:'none'})
+      .then(reg => { reg.update().catch(()=>{}) })
+      .catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
