@@ -42,6 +42,9 @@ input,textarea{-webkit-appearance:none;appearance:none}
 .sum .net{font-size:20px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;line-height:1.3}
 .sum .sub{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:2px;white-space:nowrap}
 body[data-view="list"] .sum,body[data-view="set"] .sum,body[data-view="due"] .sum{opacity:0;pointer-events:none}
+/* 標題區只在「記一筆」出現，其餘頁面讓內容直接從頂部開始 */
+body:not([data-view="entry"]) .head{display:none}
+body:not([data-view="entry"]) main{padding-top:calc(env(safe-area-inset-top,0px) + 16px)}
 
 main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 16px calc(96px + var(--sat));scrollbar-width:none}
 body[data-view="entry"] main{padding-bottom:calc(160px + var(--sat))}  /* 讓出儲存列 + 分頁列 */
