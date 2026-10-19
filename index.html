@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
 <meta name="theme-color" content="#F6F4EF">
+<meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="記帳">
@@ -31,11 +32,13 @@ try{
   --expense:#C0553C; --income:#2E7D5B;
   --r:20px;
   --shadow:0 1px 2px rgba(27,26,23,.04),0 8px 24px -12px rgba(27,26,23,.14);
+  color-scheme:only light;   /* 淺色主題：叫 Android 不要強制反色 */
   --sat:env(safe-area-inset-bottom,0px);
   --tabh:calc(63px + var(--sat));   /* 分頁列實際高度，儲存列用它對齊 */
 }
 /* 深色外觀 */
 [data-theme="dark"]{
+  color-scheme:dark;
   --bg:#12110E; --card:#1D1C18; --card-2:#232220; --ink:#F1EEE6; --ink-2:#C6C1B4; --muted:#8A8477;
   --line:#302E28; --line-2:#282621; --line-3:#4A463C;
   --seg:#2A2823; --seg-2:#34312A; --field:#26241F; --field-2:#2A2823;
@@ -49,11 +52,13 @@ try{
   --expense:#E2795E; --income:#5FBF95;
   --shadow:0 1px 2px rgba(0,0,0,.5),0 8px 24px -12px rgba(0,0,0,.7);
 }
+[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(.75)}
 [data-theme="dark"] .codebox{background:#0B0A08;color:#D9D3C4}
 [data-theme="dark"] .cal-cell.today{outline-color:var(--income)}
 [data-theme="dark"] .btn{box-shadow:0 10px 24px -14px rgba(0,0,0,.9)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;overflow:hidden}
+html{background:var(--bg)}
 body{
   background:var(--bg);color:var(--ink);
   font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","PingFang SC","Noto Sans TC","Noto Sans SC","Hiragino Sans GB","Microsoft JhengHei",system-ui,sans-serif;
