@@ -290,7 +290,7 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
             <input type="date" id="date" class="chip" style="padding:7px 8px;background:#F5F2EA;color:var(--ink-2);border:0;width:132px;flex:none;font-size:12.5px;text-align:center">
           </div>
         </div>
-        <div class="field" id="spanField" style="display:none">
+        <div class="field" id="spanField">
           <div class="lab">日期範圍</div>
           <div class="chips" id="spanSeg">
             <button class="chip on" data-span="one">單日</button>
@@ -559,13 +559,13 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
 /***  A. 試算表 → 擴充功能 → Apps Script（綁定式）      ***/
 /***  B. script.google.com → 新增專案（獨立式，靠下面的 SHEET_ID）***/
 
-var VERSION = '1.4.0';   // 1.4.0 = 支出支援多日（結束日期）；1.3.0 = 編輯與刪除
+var VERSION = '1.4.0';   // 1.4.0 = 收支都支援多日（結束日期）；1.3.0 = 編輯與刪除
 
 var SHEET_ID = '10Yw9Zz7038trQhIwm9pzmQ-PdZNZI5tBDEhIAg05pIQ';
 
 var INCOME_SHEET  = '收入';
 var EXPENSE_SHEET = '支出';
-var INCOME_HEADERS  = ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID'];
+var INCOME_HEADERS  = ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID','結束日期'];
 var EXPENSE_HEADERS = ['支出日期','Cost','類型','Notes','支出者','ID','結束日期'];
 
 /** 綁定式優先；獨立式就用 SHEET_ID 開啟 */
@@ -601,18 +601,16 @@ function getSheet_(name, headers) {
     sh.getRange('A:A').setNumberFormat('yyyy-mm-dd');
   }
 
-  // 舊表升級：補上「結束日期」欄的表頭（資料欄在最後，不動原有欄位）
-  if (name === EXPENSE_SHEET) {
-    var need = EXPENSE_HEADERS.length;
-    var lastCol = sh.getLastColumn();
-    if (lastCol < need) {
-      var hc = sh.getRange(1, need);
-      if (!hc.getValue()) {
-        hc.setValue(EXPENSE_HEADERS[need - 1])
-          .setFontWeight('bold').setBackground('#F2EEE4').setVerticalAlignment('middle');
-      }
-      sh.getRange(1, need, sh.getMaxRows(), 1).setNumberFormat('yyyy-mm-dd');
+  // 舊表升級：補上「結束日期」欄的表頭（加在最後，不動原有欄位）
+  var heads = name === INCOME_SHEET ? INCOME_HEADERS : EXPENSE_HEADERS;
+  var need = heads.length;
+  if (sh.getLastColumn() < need) {
+    var hc = sh.getRange(1, need);
+    if (!hc.getValue()) {
+      hc.setValue(heads[need - 1])
+        .setFontWeight('bold').setBackground('#F2EEE4').setVerticalAlignment('middle');
     }
+    sh.getRange(1, need, sh.getMaxRows(), 1).setNumberFormat('yyyy-mm-dd');
   }
   return sh;
 }
@@ -643,7 +641,8 @@ function buildRow_(b, isIncome, id) {
       b.prints === '' || b.prints == null ? '' : Number(b.prints),
       b.note || '',
       b.dealer ? 'checked' : '',
-      id
+      id,
+      b.endDate ? new Date(b.endDate + 'T00:00:00') : ''
     ];
   }
   return [
@@ -753,6 +752,7 @@ function list_() {
           dealer: String(r[11]).toLowerCase() === 'checked' || r[11] === true,
           expType: '', spender: '',
           note: String(r[10] || ''),
+          endDate: r[13] ? fmtDate_(r[13]) : '',
           createdAt: '', synced: true
         });
       }
@@ -916,7 +916,6 @@ function renderType(){
   $('#noteLabel').textContent = inc ? '備註' : 'Notes';
   $('#amtRow').className = 'amount-row ' + (inc ? 'inc' : 'exp');
   $('#recvRow').style.display = inc ? 'flex' : 'none';
-  $('#spanField').style.display = inc ? 'none' : 'block';
   $('#incCard').style.display = inc ? 'block' : 'none';
   $('#expCard').style.display = inc ? 'none' : 'block';
 }
@@ -997,8 +996,8 @@ function fillForm(r){
   $('#note').value = r.note || '';
   $('#dealer').checked = !!r.dealer;
 
-  multiDay = !!(r.type === 'expense' && r.endDate && r.endDate !== r.date);
-  endISO = (r.type === 'expense' && r.endDate) ? r.endDate : '';
+  multiDay = !!(r.endDate && r.endDate !== r.date);
+  endISO = r.endDate || '';
   endAuto = false;
 
   renderType(); renderServices(); renderEvents(); renderExpTypes();
@@ -1042,7 +1041,7 @@ async function saveEntry(){
   }
   if(type === 'income' && !services.length){ toast('選一個服務類型'); return }
   if(type === 'expense' && !expType){ toast('選一個支出類型'); return }
-  if(type === 'expense' && multiDay && endISO && endISO < dateISO){
+  if(multiDay && endISO && endISO < dateISO){
     toast('結束日期不能早於開始日期'); return;
   }
 
@@ -1063,7 +1062,7 @@ async function saveEntry(){
     expType: type === 'expense' ? (expType || '') : '',
     spender: type === 'expense' ? $('#spender').value.trim() : '',
     note: $('#note').value.trim(),
-    endDate: (type === 'expense' && multiDay) ? (endISO || dateISO) : ''
+    endDate: multiDay ? (endISO || dateISO) : ''
   };
 
   const isEdit = !!editingId;
@@ -1407,13 +1406,14 @@ function renderList(){
         sub = [n ? dateRange(r) : '', r.spender && r.spender !== n ? r.spender : '', r.venue].filter(Boolean).join(' · ');
       } else if(byDate){
         title = svc || r.client || '收入';
-        sub = [r.client, r.eventType, r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
+        sub = [r.endDate && r.endDate !== r.date ? dateRange(r) : '',
+               r.client, r.eventType, r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
       } else if(groupBy === 'service'){
         title = r.client || r.eventType || '—';
-        sub = [fullDate(r.date), r.client ? r.eventType : '', r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
+        sub = [dateRange(r), r.client ? r.eventType : '', r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
       } else {
         title = svc || r.client || '收入';
-        sub = [fullDate(r.date), r.client, r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
+        sub = [dateRange(r), r.client, r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
       }
       const amt = isInc ? Number(r.received || r.amount) : Number(r.amount);
       html += `<div class="row" data-id="${r.id}">
@@ -1572,7 +1572,8 @@ function openDaySheet(date){
   const rows = list.map(r => {
     const inc = r.type === 'income';
     const t1 = inc ? ((r.services||[]).filter(Boolean).join('、') || r.client || '收入') : (r.expType || '支出');
-    const t2 = inc ? [r.client, r.eventType].filter(Boolean).join(' · ')
+    const t2 = inc ? [r.endDate && r.endDate !== r.date ? dateRange(r) : '',
+                      r.client, r.eventType].filter(Boolean).join(' · ')
                    : [r.endDate && r.endDate !== r.date ? dateRange(r) : '', r.note, r.spender].filter(Boolean).join(' · ');
     const amt = inc ? Number(r.received || r.amount) : Number(r.amount);
     return `<div class="dayrow" data-id="${r.id}">
@@ -1788,7 +1789,7 @@ function openRecord(id){
   const r = R.find(x => x.id === id); if(!r || r.deleted) return;
   const isInc = r.type === 'income';
   const rows = isInc ? [
-    ['租用時間', r.date],
+    ['租用時間', dateRange(r)],
     ['服務類型', (r.services||[]).join(', ')],
     ['收入費用', S.currency + money(r.amount)],
     ['實收費用', S.currency + money(r.received)],
