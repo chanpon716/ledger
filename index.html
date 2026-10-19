@@ -388,8 +388,8 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
       <div class="cal-head">
         <div class="cal-title" id="calTitle">—</div>
         <div class="mini" id="calFilter">
-          <button data-f="income">收</button>
-          <button data-f="expense" class="on">支</button>
+          <button data-f="income" class="on">收</button>
+          <button data-f="expense">支</button>
         </div>
       </div>
       <div class="cal-week">
@@ -1332,7 +1332,7 @@ function renderList(){
 
 /* ---------- 月曆 ---------- */
 let calYM = todayISO().slice(0,7);
-let calFilter = 'expense';   // income | expense
+let calFilter = 'income';   // income | expense
 const CAL_RANGE = 12;    // 前後各 12 個月
 let calMonths = [];
 let calBuilt = false;
