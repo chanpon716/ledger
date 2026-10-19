@@ -383,6 +383,7 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
       <div class="mini" id="groupSegExp" style="margin:0 4px 12px;display:none">
         <button data-ge="date" class="on">按日期</button>
         <button data-ge="type">按類型</button>
+        <button data-ge="amount">按費用</button>
       </div>
       <div id="listBody"></div>
     </section>
@@ -1273,6 +1274,28 @@ function renderList(){
   const today = todayISO();
   const yest = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return localISO(d) })();
   const byDate = isInc ? groupBy === 'date' : groupByExp === 'date';
+  const fullDate = d => (d || '').replace(/-/g, '/');
+
+  // 支出「按費用」：不分組，直接把每筆由多至少排
+  if(!isInc && groupByExp === 'amount'){
+    const items = rows.slice().sort((a,b) =>
+      (Number(b.amount) - Number(a.amount)) ||
+      (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    let html = '<div class="daygrp"><div class="daycard">';
+    items.forEach(r => {
+      const title = r.expType || r.note || '支出';
+      const sub = [fullDate(r.date), r.expType ? r.note : '', r.spender].filter(Boolean).join(' · ');
+      html += `<div class="row" data-id="${r.id}">
+        <div class="mid"><div class="t1">${esc(title)}</div>${sub ? `<div class="t2">${esc(sub)}</div>` : ''}</div>
+        <div class="amt exp">-${S.currency}${money(Number(r.amount))}</div>
+        ${r.synced?'':'<span class="dot"></span>'}
+      </div>`;
+    });
+    html += '</div></div>';
+    $('#listBody').innerHTML = html;
+    Array.from(document.querySelectorAll('#listBody .row')).forEach(el => el.onclick = () => openRecord(el.dataset.id));
+    return;
+  }
 
   // 分組：日期 / 服務類型 / 活動類型（收入）｜日期 / 類型（支出）
   const groups = new Map();
@@ -1294,8 +1317,6 @@ function renderList(){
     if(b === '未分類') return -1;
     return sum(groups.get(b), isInc) - sum(groups.get(a), isInc);
   });
-
-  const fullDate = d => (d || '').replace(/-/g, '/');
 
   let html = '';
   keys.forEach(k => {
