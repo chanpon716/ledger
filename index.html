@@ -160,6 +160,16 @@ body:not([data-view="entry"]) .savebar{display:none}
 .cal-tag{font-size:9px;line-height:1.35;padding:2px 3px;border-radius:4px;color:#fff;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none}
 .cal-tag.inc{background:var(--income)}
 .cal-tag.exp{background:var(--expense)}
+.cal-tag.res{background:#C9C2B3;color:#fff}
+.res-list{margin-bottom:10px}
+.res-row{display:flex;align-items:center;gap:7px;background:#F0EDE5;border-radius:9px;padding:8px 10px;
+  font-size:12.5px;color:#6B6459;margin-bottom:6px;line-height:1.4}
+.res-row .rdot{width:7px;height:7px;border-radius:50%;background:#C9C2B3;flex:none}
+.cal-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 4px 0;flex:none}
+.cal-foot .hint{margin:0;padding:0;font-size:11px;flex:1;min-width:0}
+#resAdd{flex:none;width:auto;padding:7px 12px;font-size:12px;font-weight:700;border-radius:10px;
+  background:#fff;color:var(--ink);border:1px solid var(--line);box-shadow:var(--shadow)}
+#resAdd:active{transform:scale(.96)}
 .cal-more{font-size:9px;color:var(--muted);font-weight:600;padding-left:2px;flex:none}
 body[data-view="cal"] main{padding-left:8px;padding-right:8px;display:flex;flex-direction:column;overflow:hidden}
 body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-height:0}
@@ -387,7 +397,10 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
         <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
       </div>
       <div class="cal-scroll" id="calScroll"></div>
-      <p class="hint" style="padding:4px 4px 0;flex:none">上下滑動切換月份 · 點日期看當天記錄</p>
+      <div class="cal-foot">
+        <span class="hint">上下滑動切換月份 · 點日期看當天記錄</span>
+        <button id="resAdd">＋ 添加預留</button>
+      </div>
     </section>
 
     <!-- ============ 待收款 ============ -->
@@ -523,6 +536,7 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet"><div class="grab"></div><div id="sheetBody"></div></div>
 <div class="sheet" id="dueSheet"><div class="grab"></div><h3 id="dueSheetTitle">新增待收款</h3><div id="dueForm"></div></div>
+<div class="sheet" id="resSheet"><div class="grab"></div><h3 id="resSheetTitle">添加預留</h3><div id="resForm"></div></div>
 
 <script type="text/plain" id="gsSource">
 /***  記帳 → Google Sheets 接收端（收入 / 支出 兩張表）  ***/
@@ -767,6 +781,7 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 const K_REC = 'ledger.records.v2';
 const K_SET = 'ledger.settings.v2';
 const K_DUE = 'ledger.due.v1';
+const K_RES = 'ledger.reserves.v1';
 
 const DEFAULT_OPTIONS = {
   services: ['Classic Photobooth','Light Photobooth (white)','Light Photobooth(black)','Vintage Photobooth','Circle Photobooth','Cube Photobooth','Mini Photobooth','Huge Photobooth','360','即晚派相','電話留言','客製Photobooth','LookUp'],
@@ -781,6 +796,7 @@ let S = {
 };
 let R = [];
 let DUE = [];
+let RES = [];
 let type = 'income';
 let services = [];
 let eventType = null;
@@ -820,6 +836,7 @@ function verAtLeast(a, b){
 function load(){
   try{ const r = JSON.parse(localStorage.getItem(K_REC)||'[]'); if(Array.isArray(r)) R = r }catch(e){}
   try{ const d = JSON.parse(localStorage.getItem(K_DUE)||'[]'); if(Array.isArray(d)) DUE = d }catch(e){}
+  try{ const v = JSON.parse(localStorage.getItem(K_RES)||'[]'); if(Array.isArray(v)) RES = v }catch(e){}
   try{
     const s = JSON.parse(localStorage.getItem(K_SET)||'null');
     if(s){
@@ -838,6 +855,7 @@ function load(){
 function saveR(){ try{ localStorage.setItem(K_REC, JSON.stringify(R)) }catch(e){ toast('儲存失敗，空間可能已滿') } }
 function saveS(){ try{ localStorage.setItem(K_SET, JSON.stringify(S)) }catch(e){} }
 function saveD(){ try{ localStorage.setItem(K_DUE, JSON.stringify(DUE)) }catch(e){ toast('儲存失敗，空間可能已滿') } }
+function saveRes(){ try{ localStorage.setItem(K_RES, JSON.stringify(RES)) }catch(e){ toast('儲存失敗，空間可能已滿') } }
 
 let toastT;
 function toast(msg){
@@ -1330,6 +1348,24 @@ function titleOf(ym){
   return p[0] + ' 年 ' + p[1] + ' 月';
 }
 
+let resMap = new Map();
+/** 把每筆預留攤到它涵蓋的每一天 */
+function buildResMap(){
+  resMap = new Map();
+  RES.forEach(rv => {
+    if(!rv.start) return;
+    const d = new Date(rv.start + 'T00:00:00');
+    const e = new Date((rv.end || rv.start) + 'T00:00:00');
+    let guard = 0;
+    while(d <= e && guard++ < 400){
+      const k = localISO(d);
+      if(!resMap.has(k)) resMap.set(k, []);
+      resMap.get(k).push(rv);
+      d.setDate(d.getDate() + 1);
+    }
+  });
+}
+
 /** 單一月份的格子 HTML（固定 6 行 42 格，高度才不會跳） */
 function gridHTML(ym){
   const p = ym.split('-').map(Number);
@@ -1362,27 +1398,40 @@ function gridHTML(ym){
 
   const today = todayISO();
   return cells.map(c => {
+    const rvs = resMap.get(c.date) || [];
     const items = (byDate.get(c.date) || []).slice()
       .sort((a,b) => a.type === b.type ? 0 : (a.type === 'income' ? -1 : 1));
-    const shown = items.slice(0, 3);
-    const rest = items.length - shown.length;
-    const tags = shown.map(r => {
+
+    // 預留（灰）排前面，收支在後
+    const tags = [];
+    rvs.forEach(rv => {
+      tags.push(`<div class="cal-tag res" data-rid="${rv.id}">${esc(rv.title)}</div>`);
+    });
+    items.forEach(r => {
       const label = r.type === 'income'
         ? (r.client || r.eventType || (r.services||[]).filter(Boolean)[0] || '收入')
         : (r.expType || '支出');
-      return `<div class="cal-tag ${r.type === 'income' ? 'inc' : 'exp'}">${esc(label)}</div>`;
-    }).join('');
+      tags.push(`<div class="cal-tag ${r.type === 'income' ? 'inc' : 'exp'}">${esc(label)}</div>`);
+    });
+
+    const shown = tags.slice(0, 3).join('');
+    const rest = tags.length - 3;
     return `<div class="cal-cell${c.out ? ' out' : ''}${c.date === today ? ' today' : ''}" data-date="${c.date}">
-      <div class="cal-d">${c.d}</div>${tags}${rest > 0 ? `<div class="cal-more">+${rest}</div>` : ''}
+      <div class="cal-d">${c.d}</div>${shown}${rest > 0 ? `<div class="cal-more">+${rest}</div>` : ''}
     </div>`;
   }).join('');
 }
 
 function renderCalMonths(){
+  buildResMap();
   $$('#calScroll .cal-month').forEach(el => {
     el.innerHTML = '<div class="cal-grid">' + gridHTML(el.dataset.ym) + '</div>';
   });
   $$('#calScroll .cal-cell').forEach(el => el.onclick = () => openDaySheet(el.dataset.date));
+  $$('#calScroll .cal-tag.res').forEach(el => el.onclick = e => {
+    e.stopPropagation();
+    openResSheet(el.dataset.rid);
+  });
 }
 
 function renderCal(){
@@ -1421,7 +1470,12 @@ function openDaySheet(date){
     </div>`;
   }).join('');
 
+  const rvs = RES.filter(rv => rv.start <= date && date <= (rv.end || rv.start));
+
   $('#sheetBody').innerHTML = `<h3>${date.replace(/-/g, '/')}</h3>
+    ${rvs.length ? `<div class="res-list">${rvs.map(rv =>
+      `<div class="res-row" data-rid="${rv.id}"><span class="rdot"></span>${esc(rv.title)}${rv.note ? ' · ' + esc(rv.note) : ''}</div>`
+    ).join('')}</div>` : ''}
     ${list.length ? rows : '<p class="hint">這天還沒有記錄。</p>'}
     ${list.length ? `<p class="hint">收 ${S.currency}${money(inSum)} · 支 ${S.currency}${money(outSum)}</p>` : ''}`;
   openSheet();
@@ -1429,6 +1483,83 @@ function openDaySheet(date){
     closeSheet();
     setTimeout(() => openRecord(el.dataset.id), 220);
   });
+  $$('#sheetBody .res-row').forEach(el => el.onclick = () => {
+    closeSheet();
+    setTimeout(() => openResSheet(el.dataset.rid), 220);
+  });
+}
+
+/* ---------- 預留（月曆提示，不影響收支與 Sheet） ---------- */
+let editingRes = null;
+
+function openResSheet(id){
+  const rv = id ? RES.find(x => x.id === id) : null;
+  editingRes = rv ? rv.id : null;
+  const single = rv ? (rv.start === (rv.end || rv.start)) : true;
+  $('#resSheetTitle').textContent = rv ? '編輯預留' : '添加預留';
+  $('#resForm').innerHTML = `
+    <div class="field first"><div class="lab">標題</div>
+      <input class="inp" id="rTitle" placeholder="例如：婚展、器材維修" autocomplete="off"></div>
+    <div class="field"><div class="lab">期間</div>
+      <div class="mini" id="rMode" style="width:fit-content">
+        <button data-m="single"${single ? ' class="on"' : ''}>單日</button>
+        <button data-m="multi"${single ? '' : ' class="on"'}>多日</button>
+      </div>
+    </div>
+    <div class="field"><div class="lab" id="rStartLab">${single ? '日期' : '開始日'}</div>
+      <input class="inp" type="date" id="rStart"></div>
+    <div class="field" id="rEndWrap" style="${single ? 'display:none' : ''}"><div class="lab">結束日</div>
+      <input class="inp" type="date" id="rEnd"></div>
+    <div class="field"><div class="lab">備註</div>
+      <input class="inp" id="rNote" placeholder="選填" autocomplete="off"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn" id="rSave" style="flex:1">${rv ? '儲存修改' : '加入月曆'}</button>
+      ${rv ? '<button class="btn ghost" id="rDel" style="flex:0 0 auto;width:auto;padding:16px 18px;color:var(--expense)">刪除</button>' : ''}
+    </div>`;
+
+  $('#rTitle').value = rv ? rv.title : '';
+  $('#rStart').value = rv ? rv.start : todayISO();
+  $('#rEnd').value = rv ? (rv.end || rv.start) : todayISO();
+  $('#rNote').value = rv ? (rv.note || '') : '';
+
+  $$('#rMode button').forEach(b => b.onclick = () => {
+    const isSingle = b.dataset.m === 'single';
+    $$('#rMode button').forEach(x => x.classList.toggle('on', (x.dataset.m === 'single') === isSingle));
+    $('#rEndWrap').style.display = isSingle ? 'none' : '';
+    $('#rStartLab').textContent = isSingle ? '日期' : '開始日';
+    if(isSingle) $('#rEnd').value = $('#rStart').value;
+  });
+
+  $('#rSave').onclick = saveResForm;
+  if(rv) $('#rDel').onclick = () => {
+    if(!confirm('刪掉「' + rv.title + '」這個預留？')) return;
+    RES = RES.filter(x => x.id !== rv.id);
+    saveRes(); closeSheet(); renderCalMonths();
+    toast('已刪除');
+  };
+
+  $('#resSheet').classList.add('on'); $('#scrim').classList.add('on');
+  if(!rv) setTimeout(() => $('#rTitle').focus(), 280);
+}
+
+function saveResForm(){
+  const title = $('#rTitle').value.trim();
+  const start = $('#rStart').value;
+  const multi = $('#rMode button[data-m="multi"]').classList.contains('on');
+  const end = multi ? ($('#rEnd').value || start) : start;
+  if(!title){ toast('填一下標題'); $('#rTitle').focus(); return }
+  if(!start){ toast('選一個日期'); return }
+  if(end < start){ toast('結束日不能早於開始日'); return }
+
+  if(editingRes){
+    const rv = RES.find(x => x.id === editingRes);
+    if(rv){ rv.title = title; rv.start = start; rv.end = end; rv.note = $('#rNote').value.trim() }
+    toast('已更新');
+  } else {
+    RES.push({ id: uid(), title, start, end, note: $('#rNote').value.trim(), createdAt: new Date().toISOString() });
+    toast('已加入月曆');
+  }
+  saveRes(); closeSheet(); renderCalMonths();
 }
 
 /* ---------- 待收款（純提醒，不影響收支與 Sheet） ---------- */
@@ -1597,7 +1728,7 @@ function openRecord(id){
   };
 }
 function openSheet(){ $('#sheet').classList.add('on'); $('#scrim').classList.add('on') }
-function closeSheet(){ ['#sheet','#dueSheet'].forEach(s => $(s).classList.remove('on')); $('#scrim').classList.remove('on') }
+function closeSheet(){ ['#sheet','#dueSheet','#resSheet'].forEach(s => $(s).classList.remove('on')); $('#scrim').classList.remove('on') }
 window.closeSheet = closeSheet;
 
 /* ---------- 設定 ---------- */
@@ -1743,6 +1874,7 @@ function bind(){
   $('#syncNow').onclick = syncPending;
   $('#pullHist').onclick = pullHistory;
   $('#dueAdd').onclick = () => openDueSheet(null);
+  $('#resAdd').onclick = () => openResSheet(null);
   $$('#calFilter button').forEach(b => b.onclick = () => {
     calFilter = b.dataset.f;
     $$('#calFilter button').forEach(x => x.classList.toggle('on', x.dataset.f === calFilter));
