@@ -3,13 +3,13 @@
 /***  A. 試算表 → 擴充功能 → Apps Script（綁定式）      ***/
 /***  B. script.google.com → 新增專案（獨立式，靠下面的 SHEET_ID）***/
 
-var VERSION = '1.4.0';   // 1.4.0 = 支出支援多日（結束日期）；1.3.0 = 編輯與刪除
+var VERSION = '1.4.0';   // 1.4.0 = 收支都支援多日（結束日期）；1.3.0 = 編輯與刪除
 
 var SHEET_ID = '10Yw9Zz7038trQhIwm9pzmQ-PdZNZI5tBDEhIAg05pIQ';
 
 var INCOME_SHEET  = '收入';
 var EXPENSE_SHEET = '支出';
-var INCOME_HEADERS  = ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID'];
+var INCOME_HEADERS  = ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID','結束日期'];
 var EXPENSE_HEADERS = ['支出日期','Cost','類型','Notes','支出者','ID','結束日期'];
 
 /** 綁定式優先；獨立式就用 SHEET_ID 開啟 */
@@ -45,18 +45,16 @@ function getSheet_(name, headers) {
     sh.getRange('A:A').setNumberFormat('yyyy-mm-dd');
   }
 
-  // 舊表升級：補上「結束日期」欄的表頭（資料欄在最後，不動原有欄位）
-  if (name === EXPENSE_SHEET) {
-    var need = EXPENSE_HEADERS.length;
-    var lastCol = sh.getLastColumn();
-    if (lastCol < need) {
-      var hc = sh.getRange(1, need);
-      if (!hc.getValue()) {
-        hc.setValue(EXPENSE_HEADERS[need - 1])
-          .setFontWeight('bold').setBackground('#F2EEE4').setVerticalAlignment('middle');
-      }
-      sh.getRange(1, need, sh.getMaxRows(), 1).setNumberFormat('yyyy-mm-dd');
+  // 舊表升級：補上「結束日期」欄的表頭（加在最後，不動原有欄位）
+  var heads = name === INCOME_SHEET ? INCOME_HEADERS : EXPENSE_HEADERS;
+  var need = heads.length;
+  if (sh.getLastColumn() < need) {
+    var hc = sh.getRange(1, need);
+    if (!hc.getValue()) {
+      hc.setValue(heads[need - 1])
+        .setFontWeight('bold').setBackground('#F2EEE4').setVerticalAlignment('middle');
     }
+    sh.getRange(1, need, sh.getMaxRows(), 1).setNumberFormat('yyyy-mm-dd');
   }
   return sh;
 }
@@ -87,7 +85,8 @@ function buildRow_(b, isIncome, id) {
       b.prints === '' || b.prints == null ? '' : Number(b.prints),
       b.note || '',
       b.dealer ? 'checked' : '',
-      id
+      id,
+      b.endDate ? new Date(b.endDate + 'T00:00:00') : ''
     ];
   }
   return [
@@ -197,6 +196,7 @@ function list_() {
           dealer: String(r[11]).toLowerCase() === 'checked' || r[11] === true,
           expType: '', spender: '',
           note: String(r[10] || ''),
+          endDate: r[13] ? fmtDate_(r[13]) : '',
           createdAt: '', synced: true
         });
       }
