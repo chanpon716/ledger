@@ -41,7 +41,7 @@ input,textarea{-webkit-appearance:none;appearance:none}
 .sum{text-align:right;font-variant-numeric:tabular-nums;transition:.2s;flex:none;padding-top:2px}
 .sum .net{font-size:20px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;line-height:1.3}
 .sum .sub{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:2px;white-space:nowrap}
-body[data-view="list"] .sum,body[data-view="set"] .sum,body[data-view="due"] .sum{opacity:0;pointer-events:none}
+body[data-view="list"] .sum,body[data-view="set"] .sum,body[data-view="due"] .sum,body[data-view="cal"] .sum{opacity:0;pointer-events:none}
 /* 標題區：記一筆顯示「記帳 + 月份」，其餘頁面顯示頁名 */
 .head-page{display:none;font-size:24px;font-weight:700;letter-spacing:-.01em;line-height:1.2;margin-top:20px}
 body:not([data-view="entry"]) .head-entry{display:none}
@@ -139,6 +139,38 @@ body:not([data-view="entry"]) .savebar{display:none}
 .dayhead .gname b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dayhead .n{font-size:10.5px;color:#B3AC9C;font-weight:600;flex:none}
 .daycard{background:#fff;border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+
+/* 月曆 */
+.cal-head{display:flex;align-items:center;gap:8px;margin:0 4px 8px;flex:none}
+.cal-title{font-size:16px;font-weight:700;letter-spacing:-.01em;flex:1;min-width:0;white-space:nowrap}
+#calFilter button{width:auto;height:auto;padding:4px 8px;border-radius:7px;background:none;box-shadow:none;
+  font-size:11px;font-weight:600;color:var(--muted);display:block;line-height:1.2;white-space:nowrap}
+#calFilter button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.09)}
+.cal-week{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:5px;flex:none}
+.cal-week span{text-align:center;font-size:11px;font-weight:600;color:var(--muted);padding:2px 0}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;flex:1;grid-auto-rows:1fr;min-height:0}
+.cal-scroll{flex:1;min-height:0;overflow-y:auto;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.cal-scroll::-webkit-scrollbar{display:none}
+.cal-month{height:100%;scroll-snap-align:start;scroll-snap-stop:always;display:flex;flex-direction:column;padding:0 4px 2px}
+.cal-cell{background:#fff;border-radius:9px;padding:4px 3px;min-height:0;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.cal-cell.out{background:#FBFAF6;box-shadow:none}
+.cal-cell.today{outline:2px solid var(--ink);outline-offset:-2px}
+.cal-d{font-size:11px;font-weight:700;color:var(--ink-2);margin-bottom:3px;flex:none}
+.cal-cell.out .cal-d{color:#CFC8B8}
+.cal-tag{font-size:9px;line-height:1.35;padding:2px 3px;border-radius:4px;color:#fff;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none}
+.cal-tag.inc{background:var(--income)}
+.cal-tag.exp{background:var(--expense)}
+.cal-more{font-size:9px;color:var(--muted);font-weight:600;padding-left:2px;flex:none}
+body[data-view="cal"] main{padding-left:8px;padding-right:8px;display:flex;flex-direction:column;overflow:hidden}
+body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-height:0}
+
+/* 某天的記錄（月曆彈層） */
+.dayrow{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line-2)}
+.dayrow:last-of-type{border-bottom:0}
+.dayrow .mid{flex:1;min-width:0}
+.dayrow .t1{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dayrow .t2{font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dayrow .amt{font-size:13px;font-weight:700;flex:none;font-variant-numeric:tabular-nums}
 .row{display:flex;align-items:center;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line-2);transition:.12s}
 .row:last-child{border-bottom:0}
 .row:active{background:#FBFAF6}
@@ -341,6 +373,23 @@ body:not([data-view="entry"]) .savebar{display:none}
       <div id="listBody"></div>
     </section>
 
+    <!-- ============ 月曆 ============ -->
+    <section class="view" id="v-cal">
+      <div class="cal-head">
+        <div class="cal-title" id="calTitle">—</div>
+        <div class="mini" id="calFilter">
+          <button data-f="all" class="on">全部</button>
+          <button data-f="income">收</button>
+          <button data-f="expense">支</button>
+        </div>
+      </div>
+      <div class="cal-week">
+        <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+      </div>
+      <div class="cal-scroll" id="calScroll"></div>
+      <p class="hint" style="padding:4px 4px 0;flex:none">上下滑動切換月份 · 點日期看當天記錄</p>
+    </section>
+
     <!-- ============ 待收款 ============ -->
     <section class="view" id="v-due">
       <div class="listtop">
@@ -457,6 +506,9 @@ body:not([data-view="entry"]) .savebar{display:none}
     </button>
     <button data-view="list">
       <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>明細</span>
+    </button>
+    <button data-view="cal">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M8 3v4M16 3v4M3 10h18"/></svg><span>月曆</span>
     </button>
     <button data-view="due">
       <svg viewBox="0 0 24 24"><path d="M20 8H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z"/><path d="M16 4H8a2 2 0 0 0-2 2v2"/><circle cx="17" cy="13.5" r="1.3"/></svg><span>待收款</span>
@@ -1261,6 +1313,124 @@ function renderList(){
   Array.from(document.querySelectorAll('#listBody .row')).forEach(el => el.onclick = () => openRecord(el.dataset.id));
 }
 
+/* ---------- 月曆 ---------- */
+let calYM = todayISO().slice(0,7);
+let calFilter = 'all';   // all | income | expense
+const CAL_RANGE = 12;    // 前後各 12 個月
+let calMonths = [];
+let calBuilt = false;
+
+function shiftMonth(ym, delta){
+  const p = ym.split('-').map(Number);
+  const d = new Date(p[0], p[1] - 1 + delta, 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function titleOf(ym){
+  const p = ym.split('-').map(Number);
+  return p[0] + ' 年 ' + p[1] + ' 月';
+}
+
+/** 單一月份的格子 HTML（固定 6 行 42 格，高度才不會跳） */
+function gridHTML(ym){
+  const p = ym.split('-').map(Number);
+  const y = p[0], m = p[1];
+  const firstDow = new Date(y, m - 1, 1).getDay();
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const prevYm = shiftMonth(ym, -1);
+  const prevDays = new Date(y, m - 1, 0).getDate();
+  const nextYm = shiftMonth(ym, 1);
+
+  const byDate = new Map();
+  active().filter(r => calFilter === 'all' || r.type === calFilter).forEach(r => {
+    if(!byDate.has(r.date)) byDate.set(r.date, []);
+    byDate.get(r.date).push(r);
+  });
+
+  const cells = [];
+  for(let i = firstDow - 1; i >= 0; i--){
+    const d = prevDays - i;
+    cells.push({ date: prevYm + '-' + String(d).padStart(2,'0'), d, out: true });
+  }
+  for(let d = 1; d <= daysInMonth; d++){
+    cells.push({ date: ym + '-' + String(d).padStart(2,'0'), d, out: false });
+  }
+  let nd = 1;
+  while(cells.length < 42){
+    cells.push({ date: nextYm + '-' + String(nd).padStart(2,'0'), d: nd, out: true });
+    nd++;
+  }
+
+  const today = todayISO();
+  return cells.map(c => {
+    const items = (byDate.get(c.date) || []).slice()
+      .sort((a,b) => a.type === b.type ? 0 : (a.type === 'income' ? -1 : 1));
+    const shown = items.slice(0, 3);
+    const rest = items.length - shown.length;
+    const tags = shown.map(r => {
+      const label = r.type === 'income'
+        ? (r.client || r.eventType || (r.services||[]).filter(Boolean)[0] || '收入')
+        : (r.expType || '支出');
+      return `<div class="cal-tag ${r.type === 'income' ? 'inc' : 'exp'}">${esc(label)}</div>`;
+    }).join('');
+    return `<div class="cal-cell${c.out ? ' out' : ''}${c.date === today ? ' today' : ''}" data-date="${c.date}">
+      <div class="cal-d">${c.d}</div>${tags}${rest > 0 ? `<div class="cal-more">+${rest}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderCalMonths(){
+  $$('#calScroll .cal-month').forEach(el => {
+    el.innerHTML = '<div class="cal-grid">' + gridHTML(el.dataset.ym) + '</div>';
+  });
+  $$('#calScroll .cal-cell').forEach(el => el.onclick = () => openDaySheet(el.dataset.date));
+}
+
+function renderCal(){
+  const box = $('#calScroll');
+  if(!calBuilt){
+    const base = todayISO().slice(0,7);
+    calMonths = [];
+    for(let i = -CAL_RANGE; i <= CAL_RANGE; i++) calMonths.push(shiftMonth(base, i));
+    box.innerHTML = calMonths.map(ym => `<div class="cal-month" data-ym="${ym}"></div>`).join('');
+    calBuilt = true;
+    renderCalMonths();
+    const jump = () => {
+      if(!box.clientHeight){ setTimeout(jump, 40); return }
+      box.scrollTop = calMonths.indexOf(calYM) * box.clientHeight;
+    };
+    setTimeout(jump, 40);
+  } else {
+    renderCalMonths();
+  }
+  $('#calTitle').textContent = titleOf(calYM);
+}
+function openDaySheet(date){
+  const list = active().filter(r => r.date === date);
+  const inSum = list.filter(r => r.type === 'income').reduce((a,r) => a + Number(r.received || r.amount), 0);
+  const outSum = list.filter(r => r.type === 'expense').reduce((a,r) => a + Number(r.amount), 0);
+
+  const rows = list.map(r => {
+    const inc = r.type === 'income';
+    const t1 = inc ? ((r.services||[]).filter(Boolean).join('、') || r.client || '收入') : (r.expType || '支出');
+    const t2 = inc ? [r.client, r.eventType].filter(Boolean).join(' · ')
+                   : [r.note, r.spender].filter(Boolean).join(' · ');
+    const amt = inc ? Number(r.received || r.amount) : Number(r.amount);
+    return `<div class="dayrow" data-id="${r.id}">
+      <div class="mid"><div class="t1">${esc(t1)}</div>${t2 ? `<div class="t2">${esc(t2)}</div>` : ''}</div>
+      <div class="amt" style="color:${inc ? 'var(--income)' : 'var(--expense)'}">${inc ? '+' : '-'}${S.currency}${money(amt)}</div>
+    </div>`;
+  }).join('');
+
+  $('#sheetBody').innerHTML = `<h3>${date.replace(/-/g, '/')}</h3>
+    ${list.length ? rows : '<p class="hint">這天還沒有記錄。</p>'}
+    ${list.length ? `<p class="hint">收 ${S.currency}${money(inSum)} · 支 ${S.currency}${money(outSum)}</p>` : ''}`;
+  openSheet();
+  $$('#sheetBody .dayrow').forEach(el => el.onclick = () => {
+    closeSheet();
+    setTimeout(() => openRecord(el.dataset.id), 220);
+  });
+}
+
 /* ---------- 待收款（純提醒，不影響收支與 Sheet） ---------- */
 let editingDue = null;
 
@@ -1485,7 +1655,7 @@ function exportCSV(){
 }
 
 /* ---------- 導航 ---------- */
-const PAGE_TITLES = { list: '明細', due: '待收款', set: '設定' };
+const PAGE_TITLES = { list: '明細', cal: '月曆', due: '待收款', set: '設定' };
 function go(v){
   Array.from(document.querySelectorAll('.view')).forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
   Array.from(document.querySelectorAll('#tabbar button')).forEach(b => b.classList.toggle('on', b.dataset.view === v));
@@ -1493,6 +1663,7 @@ function go(v){
   if(PAGE_TITLES[v]) $('#pageTitle').textContent = PAGE_TITLES[v];
   $('#main').scrollTop = 0;
   if(v === 'list') renderList();
+  if(v === 'cal') renderCal();
   if(v === 'due') renderDue();
   if(v === 'set') renderSettings();
 }
@@ -1572,6 +1743,21 @@ function bind(){
   $('#syncNow').onclick = syncPending;
   $('#pullHist').onclick = pullHistory;
   $('#dueAdd').onclick = () => openDueSheet(null);
+  $$('#calFilter button').forEach(b => b.onclick = () => {
+    calFilter = b.dataset.f;
+    $$('#calFilter button').forEach(x => x.classList.toggle('on', x.dataset.f === calFilter));
+    renderCal();
+  });
+  $('#calScroll').onscroll = () => {
+    const box = $('#calScroll');
+    if(!box.clientHeight || !calMonths.length) return;
+    const idx = Math.round(box.scrollTop / box.clientHeight);
+    const ym = calMonths[idx];
+    if(ym && ym !== calYM){
+      calYM = ym;
+      $('#calTitle').textContent = titleOf(ym);
+    }
+  };
   $('#currency').onchange = e => { S.currency = e.target.value; saveS(); renderHead(); renderList() };
 
   $('#saveOpts').onclick = () => {
@@ -1621,6 +1807,7 @@ setDate(todayISO());
 renderHead();
 syncGroupSeg();
 renderList();
+renderCal();
 renderDue();
 renderSettings();
 
