@@ -62,6 +62,9 @@ main::-webkit-scrollbar{display:none}
 .seg button.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .seg button.on[data-type="income"]{color:var(--income)}
 .seg button.on[data-type="expense"]{color:var(--expense)}
+.seg button.on[data-lt="income"]{color:var(--income)}
+.seg button.on[data-lt="expense"]{color:var(--expense)}
+.seg button.on[data-lt="all"]{color:var(--ink)}
 
 /* 編輯中提示條 */
 .editbar{display:none;align-items:center;gap:10px;background:#1F1E1A;color:#F6F4EF;
@@ -357,7 +360,8 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
     <!-- ============ 明細 ============ -->
     <section class="view" id="v-list">
       <div class="seg" id="listSeg">
-        <button data-lt="income" class="on">收入</button>
+        <button data-lt="all" class="on">全部</button>
+        <button data-lt="income">收入</button>
         <button data-lt="expense">支出</button>
       </div>
       <div class="listtop">
@@ -802,7 +806,7 @@ let eventType = null;
 let expType = null;
 let dateISO = todayISO();
 let range = 'month';
-let listType = 'income';
+let listType = 'all';   // all | income | expense
 let groupBy = 'date';   // date | service | event（僅收入頁）
 let syncing = false;
 let editingId = null;
@@ -1026,10 +1030,12 @@ async function saveEntry(){
   resetForm();
   renderType();
 
-  // 明細頁跟著切到剛記的類型
-  listType = rec.type;
-  Array.from(document.querySelectorAll('#listSeg button')).forEach(x => x.classList.toggle('on', x.dataset.lt === rec.type));
-  syncGroupSeg();
+  // 明細頁跟著切到剛記的類型（正在看「全部」就不打斷）
+  if(listType !== 'all'){
+    listType = rec.type;
+    Array.from(document.querySelectorAll('#listSeg button')).forEach(x => x.classList.toggle('on', x.dataset.lt === rec.type));
+    syncGroupSeg();
+  }
 
   renderHead(); renderList(); renderSettings();
 
@@ -1236,36 +1242,42 @@ function renderList(){
   const mk = todayISO().slice(0,7);
   const live = active();
   const inRange = range === 'month' ? live.filter(r => r.date.slice(0,7) === mk) : live.slice();
-  const rows = inRange.filter(r => r.type === listType);
+  const isAll = listType === 'all';
   const isInc = listType === 'income';
+  const rows = isAll ? inRange : inRange.filter(r => r.type === listType);
 
   const sum = (arr, inc) => arr.reduce((a,r) => a + Number(inc ? (r.received || r.amount) : r.amount), 0);
+  const netOf = arr => arr.reduce((a,r) => a + (r.type === 'income' ? Number(r.received || r.amount) : -Number(r.amount)), 0);
   const totalOf = t => sum(inRange.filter(r => r.type === t), t === 'income');
-  const main = sum(rows, isInc);
+  const main = isAll ? netOf(rows) : sum(rows, isInc);
   const incAll = totalOf('income'), expAll = totalOf('expense');
   const net = incAll - expAll;
 
-  $('#lsK').textContent = (range === 'month' ? '本月' : '全部') + (isInc ? '收入' : '支出');
-  $('#lsMain').textContent = S.currency + money(main);
-  $('#lsMain').style.color = isInc ? 'var(--income)' : 'var(--expense)';
+  $('#lsK').textContent = (range === 'month' ? '本月' : '全部') + (isAll ? '收支' : isInc ? '收入' : '支出');
+  $('#lsMain').textContent = (main < 0 ? '-' : '') + S.currency + money(Math.abs(main));
+  $('#lsMain').style.color = (isAll ? main >= 0 : isInc) ? 'var(--income)' : 'var(--expense)';
   $('#lsCount').textContent = rows.length + ' 筆';
-  $('#lsSub').innerHTML =
-    (isInc ? `支出 ${S.currency}${money(expAll)}` : `收入 ${S.currency}${money(incAll)}`) +
-    ` · 結餘 <b style="color:${net >= 0 ? 'var(--income)' : 'var(--expense)'}">` +
-    `${net < 0 ? '-' : '+'}${S.currency}${money(Math.abs(net))}</b>`;
+  $('#lsSub').innerHTML = isAll
+    ? `收 ${S.currency}${money(incAll)} · 支 ${S.currency}${money(expAll)}`
+    : (isInc ? `支出 ${S.currency}${money(expAll)}` : `收入 ${S.currency}${money(incAll)}`) +
+      ` · 結餘 <b style="color:${net >= 0 ? 'var(--income)' : 'var(--expense)'}">` +
+      `${net < 0 ? '-' : '+'}${S.currency}${money(Math.abs(net))}</b>`;
 
   if(!rows.length){
-    $('#listBody').innerHTML = `<div class="empty"><svg class="ei" viewBox="0 0 24 24">${
-      isInc ? '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/>'
-            : '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9.5 8h5M9.5 12h5"/>'}</svg>
-      <p>${range === 'month' ? '本月' : ''}還沒有${isInc ? '收入' : '支出'}記錄<br>
+    const icon = isAll
+      ? '<path d="M4 6.5h16M4 12h16M4 17.5h10"/>'
+      : isInc
+        ? '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/>'
+        : '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9.5 8h5M9.5 12h5"/>';
+    $('#listBody').innerHTML = `<div class="empty"><svg class="ei" viewBox="0 0 24 24">${icon}</svg>
+      <p>${range === 'month' ? '本月' : ''}還沒有${isAll ? '任何' : isInc ? '收入' : '支出'}記錄<br>
       切到「記一筆」開始吧</p></div>`;
     return;
   }
 
   const today = todayISO();
   const yest = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return localISO(d) })();
-  const byDate = !isInc || groupBy === 'date';
+  const byDate = isAll || !isInc || groupBy === 'date';
 
   // 分組：日期 / 服務類型 / 活動類型
   const groups = new Map();
@@ -1292,19 +1304,23 @@ function renderList(){
   let html = '';
   keys.forEach(k => {
     const items = groups.get(k).sort((a,b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
-    const gTotal = sum(items, isInc);
+    const gTotal = isAll ? netOf(items) : sum(items, isInc);
     const label = byDate
       ? (k === today ? '今天' : k === yest ? '昨天' : k.replace(/-/g,'/'))
       : k;
+    const gTxt = isAll
+      ? (gTotal < 0 ? '-' : gTotal > 0 ? '+' : '') + S.currency + money(Math.abs(gTotal))
+      : (isInc ? '+' : '-') + S.currency + money(gTotal);
     html += `<div class="daygrp"><div class="dayhead"><span class="gname"><b>${esc(label)}</b>${
       byDate ? '' : `<span class="n">${items.length} 筆</span>`}</span>
-      <span class="t">${isInc ? '+' : '-'}${S.currency}${money(gTotal)}</span>
+      <span class="t">${gTxt}</span>
       </div><div class="daycard">`;
     items.forEach(r => {
-      // 分類檢視時組名已經講了分類，行內就改顯示客戶，避免重複
+      const inc = r.type === 'income';
       const svc = (r.services||[]).filter(Boolean).join('、');
+      // 分類檢視時組名已經講了分類，行內就改顯示客戶，避免重複
       let title, sub;
-      if(!isInc){
+      if(!inc){
         title = r.expType || '支出';
         sub = [r.note, r.spender].filter(Boolean).join(' · ');
       } else if(byDate){
@@ -1317,10 +1333,10 @@ function renderList(){
         title = svc || r.client || '收入';
         sub = [fullDate(r.date), r.client, r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
       }
-      const amt = isInc ? Number(r.received || r.amount) : Number(r.amount);
+      const amt = inc ? Number(r.received || r.amount) : Number(r.amount);
       html += `<div class="row" data-id="${r.id}">
         <div class="mid"><div class="t1">${esc(title)}</div>${sub ? `<div class="t2">${esc(sub)}</div>` : ''}</div>
-        <div class="amt ${isInc?'inc':'exp'}">${isInc?'+':'-'}${S.currency}${money(amt)}</div>
+        <div class="amt ${inc?'inc':'exp'}">${inc?'+':'-'}${S.currency}${money(amt)}</div>
         ${r.synced?'':'<span class="dot"></span>'}
       </div>`;
     });
