@@ -380,6 +380,10 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
         <button data-g="service">服務類型</button>
         <button data-g="event">活動類型</button>
       </div>
+      <div class="mini" id="groupSegExp" style="margin:0 4px 12px;display:none">
+        <button data-ge="date" class="on">按日期</button>
+        <button data-ge="type">按類型</button>
+      </div>
       <div id="listBody"></div>
     </section>
 
@@ -804,6 +808,7 @@ let dateISO = todayISO();
 let range = 'all';
 let listType = 'income';
 let groupBy = 'date';   // date | service | event（僅收入頁）
+let groupByExp = 'date';   // date | type（僅支出頁）
 let syncing = false;
 let editingId = null;
 
@@ -1223,7 +1228,9 @@ function renderHead(){
 /* ---------- 明細 ---------- */
 function syncGroupSeg(){
   $$('#groupSeg button').forEach(b => b.classList.toggle('on', b.dataset.g === groupBy));
+  $$('#groupSegExp button').forEach(b => b.classList.toggle('on', b.dataset.ge === groupByExp));
   $('#groupSeg').style.display = listType === 'income' ? '' : 'none';
+  $('#groupSegExp').style.display = listType === 'expense' ? '' : 'none';
 }
 function setListType(v){
   listType = v;
@@ -1265,13 +1272,14 @@ function renderList(){
 
   const today = todayISO();
   const yest = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return localISO(d) })();
-  const byDate = !isInc || groupBy === 'date';
+  const byDate = isInc ? groupBy === 'date' : groupByExp === 'date';
 
-  // 分組：日期 / 服務類型 / 活動類型
+  // 分組：日期 / 服務類型 / 活動類型（收入）｜日期 / 類型（支出）
   const groups = new Map();
   rows.forEach(r => {
     let k;
     if(byDate) k = r.date;
+    else if(!isInc) k = r.expType || '未分類';
     else if(groupBy === 'service') k = (r.services||[]).filter(Boolean).join('、') || '未分類';
     else k = r.eventType || '未分類';
     if(!groups.has(k)) groups.set(k, []);
@@ -1304,9 +1312,14 @@ function renderList(){
       // 分類檢視時組名已經講了分類，行內就改顯示客戶，避免重複
       const svc = (r.services||[]).filter(Boolean).join('、');
       let title, sub;
-      if(!isInc){
+      if(!isInc && byDate){
         title = r.expType || '支出';
         sub = [r.note, r.spender].filter(Boolean).join(' · ');
+      } else if(!isInc){
+        // 按類型檢視：組名已經講了類型，行內改顯示備註／支出者
+        const n = r.note || r.spender || '';
+        title = n || fullDate(r.date);
+        sub = [n ? fullDate(r.date) : '', r.spender && r.spender !== n ? r.spender : '', r.venue].filter(Boolean).join(' · ');
       } else if(byDate){
         title = svc || r.client || '收入';
         sub = [r.client, r.eventType, r.dealer ? '行家單' : ''].filter(Boolean).join(' · ');
@@ -1831,6 +1844,7 @@ function bind(){
 
   Array.from(document.querySelectorAll('#listSeg button')).forEach(b => b.onclick = () => setListType(b.dataset.lt));
   $$('#groupSeg button').forEach(b => b.onclick = () => { groupBy = b.dataset.g; syncGroupSeg(); renderList() });
+  $$('#groupSegExp button').forEach(b => b.onclick = () => { groupByExp = b.dataset.ge; syncGroupSeg(); renderList() });
 
   Array.from(document.querySelectorAll('#rangeSeg button')).forEach(b => b.onclick = () => {
     range = b.dataset.range;
