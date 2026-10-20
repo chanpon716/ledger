@@ -1257,7 +1257,11 @@ async function pushDelete(rec){
   }catch(err){ console.warn('delete failed', err); return false }
 }
 
-function refreshAll(){ renderHead(); renderList(); renderSettings() }
+function refreshAll(){
+  renderHead(); renderList(); renderSettings();
+  // 月曆開著時要即時跟著改（刪除／編輯／新增後不用重開）
+  if(calBuilt && document.body.dataset.view === 'cal') renderCal();
+}
 
 async function removeRecord(id){
   const i = R.findIndex(x => x.id === id);
