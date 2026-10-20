@@ -517,6 +517,10 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
           <button class="btn small ghost" id="pullHist">載入</button>
         </div>
         <div class="setrow">
+          <div><div class="n">Google 日曆</div><div class="d" id="calDesc">收入排程自動寫進日曆</div></div>
+          <button class="btn small ghost" id="calSync">同步</button>
+        </div>
+        <div class="setrow">
           <div><div class="n">幣別</div><div class="d">顯示在金額前面</div></div>
           <select id="currency" class="chip" style="padding:8px 10px;background:var(--field);border:0">
             <option value="MOP$">MOP$</option>
@@ -562,7 +566,9 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
           <div style="font-size:13px;font-weight:700;margin-bottom:6px">已經部署過？改完程式要「更新」才生效</div>
           <div style="font-size:12.5px;line-height:1.65;color:var(--warn-ink)">
             部署 → <b>管理部署作業</b> → 點現有那筆的<b>鉛筆圖示</b> → 版本選 <b>新版本</b> → 部署。<br>
-            網址不會變，不用重貼。改完後到上面按一次「測試連線」，要看到 <b>v1.5.0</b> 才算成功。
+            網址不會變，不用重貼。改完後到上面按一次「測試連線」，要看到 <b>v1.6.0</b> 才算成功。<br>
+            <b>v1.6.0 第一次會要求日曆權限</b>：授權時會出現「Google 尚未驗證這個應用程式」，
+            點 <b>進階</b> → <b>繼續前往（不安全）</b> → 勾選日曆權限即可，這是自己的腳本，沒有第三方。
           </div>
         </div>
         <p class="hint">程式已內含你的試算表 ID，兩種方式貼都通用；會自動建立「收入」與「支出」兩張工作表。</p>
@@ -612,14 +618,19 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
 /***  A. 試算表 → 擴充功能 → Apps Script（綁定式）      ***/
 /***  B. script.google.com → 新增專案（獨立式，靠下面的 SHEET_ID）***/
 
-var VERSION = '1.5.0';   // 1.5.0 = 收入「已收訂金」；1.4.0 = 多日（結束日期）；1.3.0 = 編輯與刪除
+var VERSION = '1.6.0';   // 1.6.0 = 收入自動寫入 Google 日曆；1.5.0 = 已收訂金；1.4.0 = 多日；1.3.0 = 編輯與刪除
 
 var SHEET_ID = '10Yw9Zz7038trQhIwm9pzmQ-PdZNZI5tBDEhIAg05pIQ';
 
 var INCOME_SHEET  = '收入';
 var EXPENSE_SHEET = '支出';
-var INCOME_HEADERS  = ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID','結束日期','已收訂金'];
+var INCOME_HEADERS  = ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID','結束日期','已收訂金','CalendarEventID'];
 var EXPENSE_HEADERS = ['支出日期','Cost','類型','Notes','支出者','ID','結束日期'];
+
+/* 日曆：留空 = 用你 Google 帳號的「主要日曆」。
+   想寫進另一個日曆，填它的 ID（日曆設定 → 整合日曆 → 日曆 ID）。 */
+var CALENDAR_ID = '';
+var CAL_SYNC = true;     // 改成 false 就停止寫日曆（Sheet 照常）
 
 /** 綁定式優先；獨立式就用 SHEET_ID 開啟 */
 function ss_() {
@@ -718,6 +729,115 @@ function buildRow_(b, isIncome, id) {
   ];
 }
 
+/* ---------- Google 日曆 ---------- */
+var CAL_COL = 16;   // 收入表第 16 欄：CalendarEventID
+
+function tz_() {
+  try { return ss_().getSpreadsheetTimeZone() || Session.getScriptTimeZone(); }
+  catch (e) { return Session.getScriptTimeZone(); }
+}
+
+/** 任何日期值 → 'yyyy-MM-dd'（用試算表時區，避免跨時區差一日） */
+function ymd_(v) {
+  if (!v) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, tz_(), 'yyyy-MM-dd');
+  }
+  var m = String(v).match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (!m) return '';
+  return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+}
+
+function dayDate_(ymd) {
+  var p = String(ymd).split('-');
+  return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+}
+
+function money_(v) {
+  var n = Math.round((Number(v) || 0) * 100) / 100;
+  var neg = n < 0; n = Math.abs(n);
+  var parts = n.toFixed(2).split('.');
+  var i = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  var d = parts[1].replace(/0+$/, '');
+  return (neg ? '-' : '') + i + (d ? '.' + d : '');
+}
+
+function cal_() {
+  if (!CAL_SYNC) return null;
+  try {
+    if (CALENDAR_ID) return CalendarApp.getCalendarById(CALENDAR_ID);
+    return CalendarApp.getDefaultCalendar();
+  } catch (e) { return null; }
+}
+
+function calTitle_(r) {
+  var sv = (r.services || []).filter(function (x) { return x; });
+  var t = r.client || r.eventType || sv[0] || '收入';
+  if (sv.length) t += ' · ' + sv.join('、');
+  return t;
+}
+
+function calDesc_(r) {
+  var L = [];
+  L.push('收入 ' + money_(r.amount));
+  if (r.received !== '' && r.received != null && Number(r.received) !== Number(r.amount)) {
+    L.push('實收 ' + money_(r.received));
+  }
+  if (r.deposit !== '' && r.deposit != null && Number(r.deposit)) {
+    L.push('已收訂金 ' + money_(r.deposit));
+  }
+  if (r.eventType) L.push('活動：' + r.eventType);
+  if (r.hours) L.push(r.hours + ' 小時');
+  if (r.source) L.push('來源：' + r.source);
+  if (r.prints) L.push('印相 ' + r.prints + ' 張');
+  if (r.note) L.push('備註：' + r.note);
+  L.push('— 記帳 App 自動建立');
+  return L.join('\n');
+}
+
+/** 有 eventId 就更新，沒有（或事件已被刪）就新建 */
+function calUpsert_(r, eventId) {
+  var cal = cal_();
+  if (!cal) return { ok: false, err: 'no-calendar' };
+
+  var s = ymd_(r.date);
+  if (!s) return { ok: false, err: 'no-date' };
+  var e = ymd_(r.endDate) || s;
+  if (e < s) e = s;
+
+  var start = dayDate_(s);
+  var end = dayDate_(e);
+  end = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1); // 全天事件結束日不含當天
+
+  var title = calTitle_(r), desc = calDesc_(r), loc = r.venue || '';
+  var ev = null;
+  if (eventId) { try { ev = cal.getEventById(String(eventId)); } catch (err) { ev = null; } }
+
+  try {
+    if (ev) {
+      ev.setTitle(title);
+      ev.setAllDayDates(start, end);
+      ev.setLocation(loc);
+      ev.setDescription(desc);
+    } else {
+      ev = cal.createAllDayEvent(title, start, end, { description: desc, location: loc });
+    }
+    return { ok: true, id: ev.getId() };
+  } catch (err) {
+    return { ok: false, err: String(err) };
+  }
+}
+
+function calDelete_(eventId) {
+  if (!eventId || !CAL_SYNC) return;
+  var cal = cal_();
+  if (!cal) return;
+  try {
+    var ev = cal.getEventById(String(eventId));
+    if (ev) ev.deleteEvent();
+  } catch (e) {}
+}
+
 function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -730,10 +850,15 @@ function doPost(e) {
     var col = isIncome ? 13 : 6;
     var mode = b.mode || '';
 
-    // 刪除：按 ID 找到那一列直接刪掉
+    // 刪除：按 ID 找到那一列直接刪掉（收入順便刪掉對應的日曆事件）
     if (mode === 'delete') {
       var delRow = id ? findRow_(sh, col, id) : 0;
-      if (delRow) sh.deleteRow(delRow);
+      if (delRow) {
+        if (isIncome) {
+          try { calDelete_(sh.getRange(delRow, CAL_COL).getValue()); } catch (e2) {}
+        }
+        sh.deleteRow(delRow);
+      }
       return out_({ ok: true, deleted: !!delRow, row: delRow });
     }
 
@@ -745,7 +870,13 @@ function doPost(e) {
       // 編輯：覆蓋原本那一列
       if (mode === 'update' && rowNum) {
         sh.getRange(rowNum, 1, 1, row.length).setValues([row]);
-        return out_({ ok: true, updated: true, row: rowNum });
+        var calU = { ok: true };
+        if (isIncome) {
+          var oldEv = sh.getRange(rowNum, CAL_COL).getValue();
+          calU = calUpsert_(b, oldEv);
+          if (calU.ok && !oldEv) sh.getRange(rowNum, CAL_COL).setValue(calU.id);
+        }
+        return out_({ ok: true, updated: true, row: rowNum, cal: calU.ok, calErr: calU.err || '' });
       }
       // 新增：ID 已存在就當重複，避免網路重試寫出兩列
       if (mode !== 'update' && rowNum) {
@@ -755,7 +886,13 @@ function doPost(e) {
 
     // 沒帶 mode=update，或要更新的那列已不存在 → 直接新增
     sh.appendRow(row);
-    return out_({ ok: true, row: sh.getLastRow(), appended: true });
+    var newRow = sh.getLastRow();
+    var calA = { ok: true };
+    if (isIncome) {
+      calA = calUpsert_(b, '');
+      if (calA.ok) sh.getRange(newRow, CAL_COL).setValue(calA.id);
+    }
+    return out_({ ok: true, row: newRow, appended: true, cal: calA.ok, calErr: calA.err || '' });
   } catch (err) {
     return out_({ ok: false, error: String(err) });
   } finally {
@@ -766,6 +903,7 @@ function doPost(e) {
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || '';
   if (action === 'list') return list_();
+  if (action === 'calsync') return calSyncAll_();
 
   var name = '', ok = true, err = '';
   try { name = ss_().getName(); } catch (e2) { ok = false; err = String(e2); }
@@ -773,6 +911,50 @@ function doGet(e) {
     ok: ok, service: 'ledger', version: VERSION, sheet: name, error: err,
     time: new Date().toISOString()
   });
+}
+
+/** ?action=calsync → 把收入表裡所有記錄補寫／更新到 Google 日曆 */
+function calSyncAll_() {
+  try {
+    if (!CAL_SYNC) return out_({ ok: false, error: '已停用日曆同步（CAL_SYNC = false）' });
+    var cal = cal_();
+    if (!cal) return out_({ ok: false, error: '找不到日曆，請檢查 CALENDAR_ID 或授權' });
+
+    var sh = getSheet_(INCOME_SHEET, INCOME_HEADERS);
+    var last = sh.getLastRow();
+    if (last < 2) return out_({ ok: true, created: 0, updated: 0, failed: 0, total: 0 });
+
+    var vals = sh.getRange(2, 1, last - 1, INCOME_HEADERS.length).getValues();
+    var ids = [], created = 0, updated = 0, failed = 0;
+
+    for (var i = 0; i < vals.length; i++) {
+      var r = vals[i];
+      var evId = String(r[15] || '');
+      if (!r[0] && !r[12]) { ids.push([evId]); continue; }
+
+      var rec = {
+        date: ymd_(r[0]),
+        services: String(r[1] || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean),
+        amount: r[2], received: r[3], eventType: r[4], hours: r[5],
+        client: r[6], venue: r[7], source: r[8], prints: r[9], note: r[10],
+        endDate: ymd_(r[13]), deposit: r[14]
+      };
+
+      var res = calUpsert_(rec, evId);
+      if (res.ok) {
+        if (evId) updated++; else created++;
+        ids.push([res.id]);
+      } else {
+        failed++;
+        ids.push([evId]);
+      }
+    }
+
+    sh.getRange(2, CAL_COL, ids.length, 1).setValues(ids);
+    return out_({ ok: true, created: created, updated: updated, failed: failed, total: vals.length });
+  } catch (err) {
+    return out_({ ok: false, error: String(err) });
+  }
 }
 
 function fmtDate_(v) {
@@ -885,7 +1067,7 @@ const DEFAULT_OPTIONS = {
 const SOURCES = ['wechat','whatsapp','fb','facebook','email','婚展客','小天','Pico','VJ','Hers','Cyrus','Galaxy','HK company','MGM','瑞吉酒店The Manor','文華東方','四季酒店','澳門大學','聖若瑟五校'];
 
 let S = {
-  endpoint:'', currency:'MOP$', scriptVer:'', oldScript:false, theme:'light',
+  endpoint:'', currency:'MOP$', scriptVer:'', oldScript:false, theme:'light', calAt:0,
   options: JSON.parse(JSON.stringify(DEFAULT_OPTIONS))
 };
 let R = [];
@@ -951,6 +1133,7 @@ function load(){
       S.scriptVer = s.scriptVer || '';
       S.oldScript = !!s.oldScript;
       S.theme = s.theme === 'dark' ? 'dark' : 'light';
+      S.calAt = Number(s.calAt) || 0;
       if(s.options){
         ['services','events','expTypes'].forEach(k => {
           if(Array.isArray(s.options[k]) && s.options[k].length) S.options[k] = s.options[k];
@@ -1329,6 +1512,36 @@ async function pullHistory(){
   }
   pulling = false;
   if(btn) btn.disabled = false;
+}
+
+/* ---------- Google 日曆 ---------- */
+async function syncCal(){
+  if(!S.endpoint){ toast('先在設定頁貼上 Apps Script 網址'); return }
+  const btn = $('#calSync');
+  if(btn && btn.disabled) return;
+  if(btn) btn.disabled = true;
+  toast('同步到 Google 日曆…');
+  try{
+    const url = S.endpoint + (S.endpoint.indexOf('?') >= 0 ? '&' : '?')
+              + 'action=calsync&_t=' + Date.now();
+    const res = await fetch(url, {redirect:'follow'});
+    const d = await res.json();
+    if(!d || d.ok !== true) throw new Error((d && d.error) || '回應異常');
+    if(!('created' in d)) throw new Error('OLD');
+
+    const parts = [];
+    if(d.created) parts.push(`新增 ${d.created} 筆`);
+    if(d.updated) parts.push(`更新 ${d.updated} 筆`);
+    if(d.failed) parts.push(`失敗 ${d.failed} 筆`);
+    S.calAt = Date.now(); saveS(); renderSettings();
+    toast(parts.length ? '日曆已同步：' + parts.join('、') : '日曆已是最新');
+  }catch(e){
+    const msg = String(e.message || e);
+    toast(msg === 'OLD' ? '腳本還是舊版，請更新到 1.6.0 再部署'
+                        : '同步失敗：' + msg.slice(0, 40));
+  }finally{
+    if(btn) btn.disabled = false;
+  }
 }
 
 async function syncPending(){
@@ -1966,6 +2179,13 @@ function renderSettings(){
     : '全部已同步';
   $('#syncNow').disabled = !ep || !(pendNew || pendDel);
 
+  const calD = $('#calDesc');
+  if(calD){
+    calD.textContent = S.calAt
+      ? `上次同步 ${new Date(S.calAt).toLocaleString('zh-HK', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})} · 收入會自動寫進日曆`
+      : '把收入排程寫進 Google 日曆（全天事件）';
+  }
+
   $('#currency').value = S.currency;
   $('#optServices').value = S.options.services.join(', ');
   $('#optEvents').value = S.options.events.join(', ');
@@ -2105,6 +2325,7 @@ function bind(){
   };
   $('#syncNow').onclick = syncPending;
   $('#pullHist').onclick = pullHistory;
+  $('#calSync').onclick = syncCal;
   $('#dueAdd').onclick = () => openDueSheet(null);
   $('#resAdd').onclick = () => openResSheet(null);
   $$('#calFilter button').forEach(b => b.onclick = () => {
