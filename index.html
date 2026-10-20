@@ -75,9 +75,6 @@ input,textarea{-webkit-appearance:none;appearance:none}
 .head h1{margin:0;font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--muted)}
 .head .m{font-size:21px;font-weight:700;letter-spacing:-.01em;margin-top:3px;white-space:nowrap}
 .head > div:first-child{min-width:0}
-.sum{text-align:right;font-variant-numeric:tabular-nums;transition:.2s;flex:none;padding-top:22px}
-.sum .net{font-size:20px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;line-height:1.3}
-body[data-view="list"] .sum,body[data-view="set"] .sum,body[data-view="due"] .sum,body[data-view="cal"] .sum{opacity:0;pointer-events:none}
 /* 標題區：記一筆顯示「記帳 + 月份」，其餘頁面顯示頁名 */
 .head-page{display:none;font-size:24px;font-weight:700;letter-spacing:-.01em;line-height:1.2;margin-top:20px}
 body:not([data-view="entry"]) .head-entry{display:none}
@@ -298,9 +295,6 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
       <div class="m" id="headMonth">—</div>
     </div>
     <div class="head-page" id="pageTitle">明細</div>
-    <div class="sum">
-      <div class="net" id="headNet">—</div>
-    </div>
   </header>
 
   <main id="main">
@@ -1364,16 +1358,6 @@ function renderHead(){
   const mk = todayISO().slice(0,7);
   const [y,m] = mk.split('-');
   $('#headMonth').textContent = `${y} 年 ${Number(m)} 月`;
-
-  let inc=0, exp=0;
-  active().forEach(r => {
-    if(r.date.slice(0,7) !== mk) return;
-    if(r.type === 'income') inc += Number(r.received || r.amount);
-    else exp += Number(r.amount);
-  });
-  const net = inc - exp;
-  $('#headNet').textContent = (net >= 0 ? '+' : '-') + S.currency + money(Math.abs(net));
-  $('#headNet').style.color = net >= 0 ? 'var(--income)' : 'var(--expense)';
   $('#curSym').textContent = S.currency;
 }
 
