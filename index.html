@@ -395,7 +395,11 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
       </div>
 
       <div class="card">
-        <div class="field first">
+        <div class="field first" id="depositField">
+          <div class="lab">已收訂金</div>
+          <input class="inp" id="deposit" inputmode="decimal" placeholder="選填" autocomplete="off">
+        </div>
+        <div class="field first" id="noteField">
           <div class="lab" id="noteLabel">備註</div>
           <textarea class="inp" id="note" placeholder="選填"></textarea>
         </div>
@@ -556,7 +560,7 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
           <div style="font-size:13px;font-weight:700;margin-bottom:6px">已經部署過？改完程式要「更新」才生效</div>
           <div style="font-size:12.5px;line-height:1.65;color:var(--warn-ink)">
             部署 → <b>管理部署作業</b> → 點現有那筆的<b>鉛筆圖示</b> → 版本選 <b>新版本</b> → 部署。<br>
-            網址不會變，不用重貼。改完後到上面按一次「測試連線」，要看到 <b>v1.3.0</b> 才算成功。
+            網址不會變，不用重貼。改完後到上面按一次「測試連線」，要看到 <b>v1.5.0</b> 才算成功。
           </div>
         </div>
         <p class="hint">程式已內含你的試算表 ID，兩種方式貼都通用；會自動建立「收入」與「支出」兩張工作表。</p>
@@ -606,13 +610,13 @@ body[data-view="cal"] #v-cal.on{display:flex;flex-direction:column;flex:1;min-he
 /***  A. 試算表 → 擴充功能 → Apps Script（綁定式）      ***/
 /***  B. script.google.com → 新增專案（獨立式，靠下面的 SHEET_ID）***/
 
-var VERSION = '1.4.0';   // 1.4.0 = 收支都支援多日（結束日期）；1.3.0 = 編輯與刪除
+var VERSION = '1.5.0';   // 1.5.0 = 收入「已收訂金」；1.4.0 = 多日（結束日期）；1.3.0 = 編輯與刪除
 
 var SHEET_ID = '10Yw9Zz7038trQhIwm9pzmQ-PdZNZI5tBDEhIAg05pIQ';
 
 var INCOME_SHEET  = '收入';
 var EXPENSE_SHEET = '支出';
-var INCOME_HEADERS  = ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID','結束日期'];
+var INCOME_HEADERS  = ['租用時間','服務類型','收入費用','實收費用','活動類型','鐘數','客戶/公司名稱','地點','接單來源','印相張數','備註','行家單','ID','結束日期','已收訂金'];
 var EXPENSE_HEADERS = ['支出日期','Cost','類型','Notes','支出者','ID','結束日期'];
 
 /** 綁定式優先；獨立式就用 SHEET_ID 開啟 */
@@ -648,16 +652,24 @@ function getSheet_(name, headers) {
     sh.getRange('A:A').setNumberFormat('yyyy-mm-dd');
   }
 
-  // 舊表升級：補上「結束日期」欄的表頭（加在最後，不動原有欄位）
+  // 舊表升級：把缺少的欄位表頭補在最後（不動原有欄位）
   var heads = name === INCOME_SHEET ? INCOME_HEADERS : EXPENSE_HEADERS;
   var need = heads.length;
-  if (sh.getLastColumn() < need) {
-    var hc = sh.getRange(1, need);
-    if (!hc.getValue()) {
-      hc.setValue(heads[need - 1])
-        .setFontWeight('bold').setBackground('#F2EEE4').setVerticalAlignment('middle');
+  var lastCol = sh.getLastColumn();
+  if (lastCol < need) {
+    for (var ci = lastCol + 1; ci <= need; ci++) {
+      var hName = heads[ci - 1];
+      var hc = sh.getRange(1, ci);
+      if (!hc.getValue()) {
+        hc.setValue(hName)
+          .setFontWeight('bold').setBackground('#F2EEE4').setVerticalAlignment('middle');
+      }
+      if (hName === '結束日期') {
+        sh.getRange(1, ci, sh.getMaxRows(), 1).setNumberFormat('yyyy-mm-dd');
+      } else if (hName === '已收訂金') {
+        sh.getRange(1, ci, sh.getMaxRows(), 1).setNumberFormat('#,##0.00');
+      }
     }
-    sh.getRange(1, need, sh.getMaxRows(), 1).setNumberFormat('yyyy-mm-dd');
   }
   return sh;
 }
@@ -689,7 +701,8 @@ function buildRow_(b, isIncome, id) {
       b.note || '',
       b.dealer ? 'checked' : '',
       id,
-      b.endDate ? new Date(b.endDate + 'T00:00:00') : ''
+      b.endDate ? new Date(b.endDate + 'T00:00:00') : '',
+      (b.deposit === '' || b.deposit == null) ? '' : (Number(b.deposit) || 0)
     ];
   }
   return [
@@ -800,6 +813,7 @@ function list_() {
           expType: '', spender: '',
           note: String(r[10] || ''),
           endDate: r[13] ? fmtDate_(r[13]) : '',
+          deposit: (r[14] === '' || r[14] === null || r[14] === undefined) ? '' : (Number(r[14]) || 0),
           createdAt: '', synced: true
         });
       }
@@ -972,6 +986,8 @@ function renderType(){
   $('#noteLabel').textContent = inc ? '備註' : 'Notes';
   $('#amtRow').className = 'amount-row ' + (inc ? 'inc' : 'exp');
   $('#recvRow').style.display = inc ? 'flex' : 'none';
+  $('#depositField').style.display = inc ? 'block' : 'none';
+  $('#noteField').classList.toggle('first', !inc);
   $('#incCard').style.display = inc ? 'block' : 'none';
   $('#expCard').style.display = inc ? 'none' : 'block';
 }
@@ -1026,6 +1042,7 @@ function resetForm(){
   $('#client').value = ''; $('#venue').value = ''; $('#hours').value = '';
   $('#prints').value = ''; $('#source').value = ''; $('#note').value = '';
   $('#spender').value = ''; $('#dealer').checked = false;
+  $('#deposit').value = '';
   services = []; eventType = null; expType = null;
   multiDay = false; endISO = ''; endAuto = true;
   renderServices(); renderEvents(); renderExpTypes();
@@ -1049,6 +1066,7 @@ function fillForm(r){
   $('#venue').value = r.venue || '';
   $('#source').value = r.source || '';
   $('#spender').value = r.spender || '';
+  $('#deposit').value = (r.deposit === '' || r.deposit == null) ? '' : String(r.deposit);
   $('#note').value = r.note || '';
   $('#dealer').checked = !!r.dealer;
 
@@ -1117,6 +1135,7 @@ async function saveEntry(){
     dealer: type === 'income' ? $('#dealer').checked : false,
     expType: type === 'expense' ? (expType || '') : '',
     spender: type === 'expense' ? $('#spender').value.trim() : '',
+    deposit: type === 'income' ? num($('#deposit').value) : '',
     note: $('#note').value.trim(),
     endDate: multiDay ? (endISO || dateISO) : ''
   };
@@ -1165,6 +1184,8 @@ async function saveEntry(){
       rec.synced = true; rec.needsUpdate = false; saveR(); renderList(); renderSettings();
       if(rec.endDate && S.scriptVer && !verAtLeast(S.scriptVer, '1.4.0')){
         toast('已寫入 Sheet，但腳本 v' + S.scriptVer + ' 未支援結束日期，請重新部署');
+      } else if(rec.deposit !== '' && rec.deposit != null && S.scriptVer && !verAtLeast(S.scriptVer, '1.5.0')){
+        toast('已寫入 Sheet，但腳本 v' + S.scriptVer + ' 未支援已收訂金，請重新部署');
       } else if(res.code === 'APPENDED') toast('Sheet 原本那列不見了，已重新新增');
     } else {
       saveR(); renderList(); renderSettings();
@@ -1849,6 +1870,7 @@ function openRecord(id){
     ['服務類型', (r.services||[]).join(', ')],
     ['收入費用', S.currency + money(r.amount)],
     ['實收費用', S.currency + money(r.received)],
+    ['已收訂金', r.deposit === '' || r.deposit == null ? '' : S.currency + money(r.deposit)],
     ['活動類型', r.eventType],
     ['鐘數', r.hours],
     ['客戶/公司名稱', r.client],
@@ -1980,6 +2002,7 @@ function bind(){
   const cleanNum = e => { e.target.value = e.target.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1') };
   $('#amount').addEventListener('input', cleanNum);
   $('#received').addEventListener('input', cleanNum);
+  $('#deposit').addEventListener('input', cleanNum);
   $('#hours').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d]/g,'') });
   $('#prints').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d]/g,'') });
   $('#amount').addEventListener('keydown', e => { if(e.key === 'Enter') saveEntry() });
