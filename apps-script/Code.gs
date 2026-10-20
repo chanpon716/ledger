@@ -3,7 +3,7 @@
 /***  A. 試算表 → 擴充功能 → Apps Script（綁定式）      ***/
 /***  B. script.google.com → 新增專案（獨立式，靠下面的 SHEET_ID）***/
 
-var VERSION = '1.6.0';   // 1.6.0 = 收入自動寫入 Google 日曆；1.5.0 = 已收訂金；1.4.0 = 多日；1.3.0 = 編輯與刪除
+var VERSION = '1.7.0';   // 1.7.0 = 日曆去重；1.6.0 = 收入自動寫入 Google 日曆；1.5.0 = 已收訂金；1.4.0 = 多日；1.3.0 = 編輯與刪除
 
 var SHEET_ID = '10Yw9Zz7038trQhIwm9pzmQ-PdZNZI5tBDEhIAg05pIQ';
 
@@ -162,7 +162,11 @@ function calTitle_(r) {
   return t;
 }
 
-function calDesc_(r) {
+var CAL_SIGN = '記帳 App 自動建立';
+
+function calMarker_(recId) { return '#' + recId; }
+
+function calDesc_(r, recId) {
   var L = [];
   L.push('收入 ' + money_(r.amount));
   if (r.received !== '' && r.received != null && Number(r.received) !== Number(r.amount)) {
@@ -176,51 +180,147 @@ function calDesc_(r) {
   if (r.source) L.push('來源：' + r.source);
   if (r.prints) L.push('印相 ' + r.prints + ' 張');
   if (r.note) L.push('備註：' + r.note);
-  L.push('— 記帳 App 自動建立');
+  L.push('— ' + CAL_SIGN + (recId ? ' ' + calMarker_(recId) : ''));
   return L.join('\n');
 }
 
-/** 有 eventId 就更新，沒有（或事件已被刪）就新建 */
-function calUpsert_(r, eventId) {
-  var cal = cal_();
-  if (!cal) return { ok: false, err: 'no-calendar' };
+function calEventsIn_(cal, from, to) {
+  try { return cal.getEvents(from, to) || []; } catch (e) { return []; }
+}
 
+function calWindow_(s, e) {
+  var a = dayDate_(s), b = dayDate_(e);
+  return {
+    from: new Date(a.getFullYear(), a.getMonth(), a.getDate() - 1),
+    to:   new Date(b.getFullYear(), b.getMonth(), b.getDate() + 2)
+  };
+}
+
+var CAL_DEAD = {};   // 今次執行已刪掉的事件，避免再被配對到
+
+/** 找出屬於這一筆記錄的所有事件（含舊版沒有標記的重複事件） */
+function calMatch_(evs, r, recId, s) {
+  var marker = recId ? calMarker_(recId) : '';
+  var title = calTitle_(r);
+  var exact = [], legacy = [];
+
+  for (var i = 0; i < evs.length; i++) {
+    var ev = evs[i], d = '', eid = '';
+    try { eid = ev.getId(); } catch (e0) {}
+    if (eid && CAL_DEAD[eid]) continue;
+    try { d = ev.getDescription() || ''; } catch (e1) { continue; }
+
+    if (marker && d.indexOf(marker) >= 0) { exact.push(ev); continue; }
+    if (d.indexOf(CAL_SIGN) < 0) continue;
+    // 已經有標記的事件屬於其他記錄，不能當成自己的舊版重複
+    if (d.indexOf('#') >= 0) continue;
+
+    var t = ''; try { t = ev.getTitle(); } catch (e2) {}
+    if (t !== title) continue;
+
+    var st = ''; try { st = ymd_(ev.getAllDayStartDate()); } catch (e3) { continue; }
+    if (st === s) legacy.push(ev);
+  }
+  return exact.concat(legacy);
+}
+
+function calWrite_(ev, r, start, end, recId) {
+  ev.setTitle(calTitle_(r));
+  ev.setAllDayDates(start, end);
+  ev.setLocation(r.venue || '');
+  ev.setDescription(calDesc_(r, recId));
+}
+
+/** 建立或更新一筆，並把同一個記錄的重複事件清掉 */
+function calApply_(cal, evs, r, recId, eventId) {
   var s = ymd_(r.date);
   if (!s) return { ok: false, err: 'no-date' };
   var e = ymd_(r.endDate) || s;
   if (e < s) e = s;
 
   var start = dayDate_(s);
-  var end = dayDate_(e);
-  end = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1); // 全天事件結束日不含當天
+  var endD = dayDate_(e);
+  var end = new Date(endD.getFullYear(), endD.getMonth(), endD.getDate() + 1); // 全天事件不含結束當日
 
-  var title = calTitle_(r), desc = calDesc_(r), loc = r.venue || '';
-  var ev = null;
-  if (eventId) { try { ev = cal.getEventById(String(eventId)); } catch (err) { ev = null; } }
+  var pool = calMatch_(evs, r, recId, s);
+  var keep = null, i;
 
-  try {
-    if (ev) {
-      ev.setTitle(title);
-      ev.setAllDayDates(start, end);
-      ev.setLocation(loc);
-      ev.setDescription(desc);
-    } else {
-      ev = cal.createAllDayEvent(title, start, end, { description: desc, location: loc });
+  if (eventId) {
+    for (i = 0; i < pool.length; i++) {
+      var pid = ''; try { pid = pool[i].getId(); } catch (e4) {}
+      if (pid === String(eventId)) { keep = pool[i]; break; }
     }
-    return { ok: true, id: ev.getId() };
+  }
+  if (!keep && pool.length) keep = pool[0];
+
+  var removed = 0;
+  try {
+    if (keep) {
+      calWrite_(keep, r, start, end, recId);
+    } else {
+      keep = cal.createAllDayEvent(calTitle_(r), start, end,
+        { description: calDesc_(r, recId), location: r.venue || '' });
+    }
+    for (i = 0; i < pool.length; i++) {
+      if (pool[i] === keep) continue;
+      try {
+        var did = pool[i].getId();
+        pool[i].deleteEvent();
+        CAL_DEAD[did] = 1;
+        removed++;
+      } catch (e5) {}
+    }
   } catch (err) {
     return { ok: false, err: String(err) };
   }
+
+  var nid = ''; try { nid = keep.getId(); } catch (e6) {}
+  return { ok: true, id: nid, removed: removed };
 }
 
-function calDelete_(eventId) {
-  if (!eventId || !CAL_SYNC) return;
+/** 單筆用：自己抓一段時間的事件再比對 */
+function calApplyFor_(r, recId, eventId) {
   var cal = cal_();
-  if (!cal) return;
-  try {
-    var ev = cal.getEventById(String(eventId));
-    if (ev) ev.deleteEvent();
-  } catch (e) {}
+  if (!cal) return { ok: false, err: 'no-calendar' };
+  var s = ymd_(r.date);
+  if (!s) return { ok: false, err: 'no-date' };
+  var e = ymd_(r.endDate) || s;
+  if (e < s) e = s;
+  var w = calWindow_(s, e);
+  return calApply_(cal, calEventsIn_(cal, w.from, w.to), r, recId, eventId);
+}
+
+/** 刪除一筆的所有相關事件（含重複的） */
+function calRemoveFor_(r, recId, eventId) {
+  var cal = cal_();
+  if (!cal) return 0;
+  var s = ymd_(r && r.date);
+  var pool = [];
+  if (s) {
+    var e = ymd_(r.endDate) || s;
+    if (e < s) e = s;
+    var w = calWindow_(s, e);
+    pool = calMatch_(calEventsIn_(cal, w.from, w.to), r, recId, s);
+  }
+  if (!pool.length && eventId) {
+    try { var ev0 = cal.getEventById(String(eventId)); if (ev0) pool = [ev0]; } catch (e7) {}
+  }
+  var n = 0;
+  for (var i = 0; i < pool.length; i++) {
+    try { pool[i].deleteEvent(); n++; } catch (e8) {}
+  }
+  return n;
+}
+
+/** Sheet 一列 → 事件用的物件 */
+function recFromRow_(r) {
+  return {
+    date: ymd_(r[0]),
+    services: String(r[1] || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean),
+    amount: r[2], received: r[3], eventType: r[4], hours: r[5],
+    client: r[6], venue: r[7], source: r[8], prints: r[9], note: r[10],
+    endDate: ymd_(r[13]), deposit: r[14]
+  };
 }
 
 function doPost(e) {
@@ -240,7 +340,10 @@ function doPost(e) {
       var delRow = id ? findRow_(sh, col, id) : 0;
       if (delRow) {
         if (isIncome) {
-          try { calDelete_(sh.getRange(delRow, CAL_COL).getValue()); } catch (e2) {}
+          try {
+            var dv = sh.getRange(delRow, 1, 1, INCOME_HEADERS.length).getValues()[0];
+            calRemoveFor_(recFromRow_(dv), String(dv[12] || id), String(dv[15] || ''));
+          } catch (e2) {}
         }
         sh.deleteRow(delRow);
       }
@@ -255,11 +358,11 @@ function doPost(e) {
       // 編輯：覆蓋原本那一列
       if (mode === 'update' && rowNum) {
         sh.getRange(rowNum, 1, 1, row.length).setValues([row]);
-        var calU = { ok: true };
+        var calU = { ok: true, removed: 0 };
         if (isIncome) {
           var oldEv = sh.getRange(rowNum, CAL_COL).getValue();
-          calU = calUpsert_(b, oldEv);
-          if (calU.ok && !oldEv) sh.getRange(rowNum, CAL_COL).setValue(calU.id);
+          calU = calApplyFor_(b, id, oldEv);
+          if (calU.ok && calU.id) sh.getRange(rowNum, CAL_COL).setValue(calU.id);
         }
         return out_({ ok: true, updated: true, row: rowNum, cal: calU.ok, calErr: calU.err || '' });
       }
@@ -272,10 +375,10 @@ function doPost(e) {
     // 沒帶 mode=update，或要更新的那列已不存在 → 直接新增
     sh.appendRow(row);
     var newRow = sh.getLastRow();
-    var calA = { ok: true };
+    var calA = { ok: true, removed: 0 };
     if (isIncome) {
-      calA = calUpsert_(b, '');
-      if (calA.ok) sh.getRange(newRow, CAL_COL).setValue(calA.id);
+      calA = calApplyFor_(b, id, '');
+      if (calA.ok && calA.id) sh.getRange(newRow, CAL_COL).setValue(calA.id);
     }
     return out_({ ok: true, row: newRow, appended: true, cal: calA.ok, calErr: calA.err || '' });
   } catch (err) {
@@ -298,7 +401,7 @@ function doGet(e) {
   });
 }
 
-/** ?action=calsync → 把收入表裡所有記錄補寫／更新到 Google 日曆 */
+/** ?action=calsync → 把收入表所有記錄補寫／更新到 Google 日曆，並清掉重複 */
 function calSyncAll_() {
   try {
     if (!CAL_SYNC) return out_({ ok: false, error: '已停用日曆同步（CAL_SYNC = false）' });
@@ -307,27 +410,37 @@ function calSyncAll_() {
 
     var sh = getSheet_(INCOME_SHEET, INCOME_HEADERS);
     var last = sh.getLastRow();
-    if (last < 2) return out_({ ok: true, created: 0, updated: 0, failed: 0, total: 0 });
+    if (last < 2) return out_({ ok: true, created: 0, updated: 0, removed: 0, failed: 0, total: 0 });
 
     var vals = sh.getRange(2, 1, last - 1, INCOME_HEADERS.length).getValues();
-    var ids = [], created = 0, updated = 0, failed = 0;
 
+    // 一次抓齊整個範圍的事件，避免逐筆查詢太慢
+    var minS = '', maxS = '';
+    for (var k = 0; k < vals.length; k++) {
+      var ds = ymd_(vals[k][0]);
+      if (!ds) continue;
+      var de = ymd_(vals[k][13]) || ds;
+      if (!minS || ds < minS) minS = ds;
+      if (!maxS || de > maxS) maxS = de;
+    }
+    CAL_DEAD = {};
+    var evs = [];
+    if (minS) {
+      var w = calWindow_(minS, maxS);
+      evs = calEventsIn_(cal, w.from, w.to);
+    }
+
+    var ids = [], created = 0, updated = 0, removed = 0, failed = 0;
     for (var i = 0; i < vals.length; i++) {
       var r = vals[i];
+      var recId = String(r[12] || '');
       var evId = String(r[15] || '');
-      if (!r[0] && !r[12]) { ids.push([evId]); continue; }
+      if (!r[0] && !recId) { ids.push([evId]); continue; }
 
-      var rec = {
-        date: ymd_(r[0]),
-        services: String(r[1] || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean),
-        amount: r[2], received: r[3], eventType: r[4], hours: r[5],
-        client: r[6], venue: r[7], source: r[8], prints: r[9], note: r[10],
-        endDate: ymd_(r[13]), deposit: r[14]
-      };
-
-      var res = calUpsert_(rec, evId);
+      var res = calApply_(cal, evs, recFromRow_(r), recId, evId);
       if (res.ok) {
         if (evId) updated++; else created++;
+        removed += (res.removed || 0);
         ids.push([res.id]);
       } else {
         failed++;
@@ -336,7 +449,7 @@ function calSyncAll_() {
     }
 
     sh.getRange(2, CAL_COL, ids.length, 1).setValues(ids);
-    return out_({ ok: true, created: created, updated: updated, failed: failed, total: vals.length });
+    return out_({ ok: true, created: created, updated: updated, removed: removed, failed: failed, total: vals.length });
   } catch (err) {
     return out_({ ok: false, error: String(err) });
   }
