@@ -185,7 +185,17 @@ body:not([data-view="entry"]) .savebar{display:none}
 #calFilter button.on{background:var(--pill);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.09)}
 .cal-week{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:5px;flex:none}
 .cal-week span{text-align:center;font-size:11px;font-weight:600;color:var(--muted);padding:2px 0}
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;flex:1;grid-auto-rows:1fr;min-height:0}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;flex:1;grid-auto-rows:1fr;min-height:0;position:relative}
+.cal-tags{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+/* 多日記錄：跨格連成一條 */
+.cal-span{position:absolute;height:15px;border-radius:4px;color:#fff;font-size:9px;font-weight:600;
+  line-height:15px;padding:0 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2;
+  box-shadow:0 1px 2px rgba(0,0,0,.10);
+  top:calc((100% - 20px) / 6 * var(--r) + 4px * var(--r) + 23px + var(--l) * 17px);
+  left:calc((100% - 24px) / 7 * var(--c) + 4px * var(--c));
+  width:calc((100% - 24px) / 7 * var(--s) + 4px * (var(--s) - 1))}
+.cal-span.inc{background:var(--tag-inc)}
+.cal-span.exp{background:var(--tag-exp)}
 .cal-scroll{flex:1;min-height:0;overflow-y:auto;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .cal-scroll::-webkit-scrollbar{display:none}
 .cal-month{height:100%;scroll-snap-align:start;scroll-snap-stop:always;display:flex;flex-direction:column;padding:0 4px 2px}
@@ -1550,25 +1560,6 @@ function gridHTML(ym){
   const prevDays = new Date(y, m - 1, 0).getDate();
   const nextYm = shiftMonth(ym, 1);
 
-  const byDate = new Map();
-  const addDay = (k, r) => {
-    if(!byDate.has(k)) byDate.set(k, []);
-    byDate.get(k).push(r);
-  };
-  active().filter(r => r.type === calFilter).forEach(r => {
-    addDay(r.date, r);
-    // 多日支出：範圍內每一天都標一次
-    if(r.endDate && r.endDate > r.date){
-      const d = new Date(r.date + 'T00:00:00');
-      const e = new Date(r.endDate + 'T00:00:00');
-      let guard = 0;
-      while(d < e && guard++ < 62){
-        d.setDate(d.getDate() + 1);
-        addDay(localISO(d), r);
-      }
-    }
-  });
-
   const cells = [];
   for(let i = firstDow - 1; i >= 0; i--){
     const d = prevDays - i;
@@ -1583,8 +1574,46 @@ function gridHTML(ym){
     nd++;
   }
 
+  // 單日 → 放進格子；多日 → 另外畫成跨格橫條
+  const byDate = new Map();
+  const multi = [];
+  active().filter(r => r.type === calFilter).forEach(r => {
+    if(r.endDate && r.endDate > r.date){ multi.push(r); return }
+    if(!byDate.has(r.date)) byDate.set(r.date, []);
+    byDate.get(r.date).push(r);
+  });
+  multi.sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+  const layers = new Array(cells.length).fill(0);
+  const spans = [];
+
+  multi.forEach(r => {
+    const idxs = [];
+    cells.forEach((c, i) => { if(c.date >= r.date && c.date <= r.endDate) idxs.push(i) });
+    if(!idxs.length) return;
+
+    // 同一行裡連續的格子併成一段（跨週就分成多段）
+    const segs = [];
+    let cur = null;
+    idxs.forEach(i => {
+      const row = Math.floor(i / 7), col = i % 7;
+      if(cur && cur.row === row && cur.col + cur.span === col) cur.span++;
+      else { cur = { row, col, span: 1 }; segs.push(cur) }
+    });
+
+    // 整條共用一個層號，線才會是直的
+    let layer = 0;
+    idxs.forEach(i => { if(layers[i] > layer) layer = layers[i] });
+    idxs.forEach(i => { layers[i] = layer + 1 });
+    segs.forEach(seg => spans.push({ rec: r, seg, layer }));
+  });
+
+  const labelOf = r => r.type === 'income'
+    ? (r.client || r.eventType || (r.services||[]).filter(Boolean)[0] || '收入')
+    : (r.expType || '支出');
+
   const today = todayISO();
-  return cells.map(c => {
+  const cellsHTML = cells.map((c, i) => {
     const rvs = resMap.get(c.date) || [];
     const items = (byDate.get(c.date) || []).slice()
       .sort((a,b) => a.type === b.type ? 0 : (a.type === 'income' ? -1 : 1));
@@ -1595,18 +1624,22 @@ function gridHTML(ym){
       tags.push(`<div class="cal-tag res" data-rid="${rv.id}">${esc(rv.title)}</div>`);
     });
     items.forEach(r => {
-      const label = r.type === 'income'
-        ? (r.client || r.eventType || (r.services||[]).filter(Boolean)[0] || '收入')
-        : (r.expType || '支出');
-      tags.push(`<div class="cal-tag ${r.type === 'income' ? 'inc' : 'exp'}">${esc(label)}</div>`);
+      tags.push(`<div class="cal-tag ${r.type === 'income' ? 'inc' : 'exp'}">${esc(labelOf(r))}</div>`);
     });
 
     const shown = tags.slice(0, 3).join('');
     const rest = tags.length - 3;
     return `<div class="cal-cell${c.out ? ' out' : ''}${c.date === today ? ' today' : ''}" data-date="${c.date}">
-      <div class="cal-d">${c.d}</div>${shown}${rest > 0 ? `<div class="cal-more">+${rest}</div>` : ''}
+      <div class="cal-d">${c.d}</div>
+      <div class="cal-tags" style="margin-top:${layers[i] * 17}px">${shown}${rest > 0 ? `<div class="cal-more">+${rest}</div>` : ''}</div>
     </div>`;
   }).join('');
+
+  const spansHTML = spans.map(({ rec, seg, layer }) =>
+    `<div class="cal-span ${rec.type === 'income' ? 'inc' : 'exp'}" data-id="${rec.id}"
+      style="--c:${seg.col};--s:${seg.span};--r:${seg.row};--l:${layer}">${esc(labelOf(rec))}</div>`).join('');
+
+  return cellsHTML + spansHTML;
 }
 
 function renderCalMonths(){
@@ -1618,6 +1651,10 @@ function renderCalMonths(){
   $$('#calScroll .cal-tag.res').forEach(el => el.onclick = e => {
     e.stopPropagation();
     openResSheet(el.dataset.rid);
+  });
+  $$('#calScroll .cal-span').forEach(el => el.onclick = e => {
+    e.stopPropagation();
+    openRecord(el.dataset.id);
   });
 }
 
